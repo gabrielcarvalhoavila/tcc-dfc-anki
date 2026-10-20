@@ -25,7 +25,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
 | `tests/` | 98 testes, sem rede; 11 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
-| `scripts/` | Instalar e empacotar o add-on, rodar os testes |
+| `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |
 

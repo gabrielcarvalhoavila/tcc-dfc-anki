@@ -27,7 +27,7 @@ O add-on cobre `A -> H -> I -> J`: registra as revisões e, na janela do estudo,
 | `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0.2.2 (registro, sorteio e exibição). Registro conferido no Anki 26.05 real contra o revlog (12 revisões, 0 divergências); sorteio e exibição testados com o motor real do Anki 26.5 (pacote `anki`, sem interface) e, em 20/10, no Anki real (variante nos dois lados, nota intacta, tecla `x`, mesma variante após Ctrl+Z); o teste de fumaça achou três defeitos (tecla `b`, novo sorteio e marca de variante ruim perdida após Ctrl+Z), corrigidos nas versões 0.2.1 e 0.2.2 |
 | `pipeline/dfc_pipeline/` | Exportar, gerar, validar, auditar e empacotar variantes | Testado com LLM falso e servidor HTTP local; falta chave e modelo reais |
 | `tests/` | 98 testes (`scripts/run_tests.ps1`; 11 deles só rodam com o pacote `anki`: `-Real`) | Passando |
-| `scripts/` | Instalar e empacotar o add-on, rodar os testes | |
+| `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção (`render_check.py`) | |
 | `data/` (ignorado pelo Git) | `cards.jsonl`, `generation.jsonl`, `validation.jsonl`, auditoria e banco | Contém texto de cartões: não versionar |
 
 ## Add-on
@@ -48,6 +48,8 @@ O add-on cobre `A -> H -> I -> J`: registra as revisões e, na janela do estudo,
 Instalar: feche o Anki, rode `.\scripts\install_addon.ps1` e abra o Anki. Para outra pessoa: `.\scripts\package_addon.ps1` gera `dist\dfc_probe.ankiaddon`.
 
 **Teste de fumaça do sorteio (Anki real).** Banco de teste (variantes falsas, fáceis de reconhecer): `data/bank/variant_bank_fake.json`, feito com `--dry-run` e `pack --allow-fake`. Em Complementos > DFC Probe > Config: `draw_start` = hoje e `allow_fake_bank` = `true`; Ferramentas > DFC Probe > Importar banco de variantes. Revisar cartões do AWS ou HTTPS: cerca de metade deve mostrar o texto falso nos dois lados; `x` marca a variante (aparece "variante marcada como ruim"); Ctrl+Z e responder de novo: o mesmo texto (original ou falso) deve voltar; Ferramentas > DFC Probe > Status. Depois: `draw_start` = `2026-11-02`, `allow_fake_bank` = `false` e importar o banco real antes de 2/11. Eventos fora da janela não entram na análise.
+
+**Conferir a exibição em todas as notas.** `python scripts/render_check.py --bank <banco>` (mesmo ambiente do `-Real`, com o pacote `anki`) copia a coleção, renderiza cada variante com o template real de cada tipo de nota e repete a troca que o gancho faz; acusa `render_failed`, `template_mismatch`, `answer_mismatch`, `swap_failed` ou `nota_editada` e sai com código 1 se houver falha. Em 20/10, com um banco falso de 709 notas e 2836 variantes sobre a coleção do autor: 2836 de 2836 corretas (Basic 1224, Einfach 160, Einfach+ 40, Omissão de Palavras 1412; as notas Cloze são 50% das elegíveis e 71% das com `reps ≥ 5` e `lapses = 0`). Repetir com o banco real antes de 2/11 e, no Anki de cada participante, ver ao menos algumas variantes Cloze na interface.
 
 ## Pipeline
 
