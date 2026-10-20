@@ -163,7 +163,7 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 
 ## 7. Análise (pré-registrada)
 
-- **Primária (H2):** regressão logística com agrupamento: `falha ~ variante × suspeito + log(intervalo) + log(dias desde a última revisão) + tipo_de_variante + n_blanks + has_image`, com efeito aleatório (ou erro-padrão robusto) por **nota** e por usuário. A estimativa reportada é a **DiD em pontos percentuais** (efeitos marginais), com IC 95%.
+- **Primária (H2):** regressão logística com agrupamento: `falha ~ variante × suspeito + log(intervalo) + log(dias desde a última revisão) + tipo_de_variante + n_blanks + has_image`, com efeito aleatório (ou erro-padrão robusto) por **nota** e por usuário (`n_blanks` vale 0 no Básico). A estimativa reportada é a **DiD em pontos percentuais** (efeitos marginais), com IC 95%.
 - **Secundárias:** dose-resposta (efeito da variante × `reps`); por tipo de variante (`pergunta`, `sem_imagem` e os do Básico); por número de lacunas e por presença de imagem; E3 (AUC de um escore de candidato prevendo a falha da variante); custo (minutos e lapsos extras).
 - **Sensibilidade:** incluir eventos "variante ruim"; excluir a primeira revisão após a reativação; definição alternativa de suspeito (`reps ≥ 4`; e `n_reviews ≥ 5`); apenas eventos sem filtro de modo sonda; razão de chances na escala logit; subamostra digitada (se existir).
 - **Efeito de escala (v1.2):** se a variante for mais fácil (ou mais difícil) do que o original para todos, por exemplo a `pergunta` em relação ao rótulo seco, a DiD em pontos percentuais deixa de ser zero só porque os controles têm mais falha a perder (ou a ganhar), sem nenhuma dependência da forma. Por isso a interação é repetida nas escalas de razão de chances e de razão de risco e com a falha anterior do cartão (`last_ease`, `prev_eases`) como covariável, e o relatório diz se a conclusão de H2 muda de uma escala para outra.
@@ -213,7 +213,7 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 | Imagem essencial para responder | Regra dos 30 caracteres, auditoria da `sem_imagem` e exclusão de subbaralhos em que a imagem é o enunciado |
 | Viés do experimentador (a hipótese é do autor) | Eventos do irmão como réplica; subamostra digitada com correção cega só se sobrar prazo (6.7) |
 | Poucos suspeitos | Modo sonda; irmão; relatar o menor efeito detectável |
-| Agrupamento (vários eventos por cartão e por pessoa) | Erros-padrão por cartão e usuário; priorizar mais cartões distintos a mais revisões por cartão |
+| Agrupamento (vários eventos por nota e por pessoa) | Erros-padrão por nota e usuário; priorizar mais notas distintas a mais revisões por nota |
 | Generalização | Declarar o escopo: texto conceitual, poucas pessoas (um participante principal) |
 
 ---
