@@ -149,6 +149,7 @@ def _prepare_exposure(p: dict, card) -> None:
         extra["flag_bad"] = 1  # a variante já marcada como ruim continua marcada depois do Ctrl+Z
     if d.arm is None:
         return
+    extra.update(variants.exposure_covariates(entry))
     extra["shown_ok"] = 1
     if d.arm == "variant":
         extra.update(variant_id=d.variant["id"], variant_type=d.variant["type"])

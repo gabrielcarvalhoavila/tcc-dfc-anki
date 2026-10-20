@@ -163,6 +163,14 @@ class BankTest(unittest.TestCase):
         self.assertEqual([v["type"] for v in bank.entry(2)["variants"]], ["pergunta"])
         self.assertEqual(bank.n_variants, 3)
 
+    def test_exposure_covariates_come_from_the_bank_entry(self):
+        ficha = {"kind": "cloze", "ords": [0], "q_field": 0, "fields_hash": "f", "answers_html": ["A", "B"], "images_html": ['<img src="d.png">'], "variants": [{"id": "1-p", "type": "pergunta", "text": "Quais? [...1]\nE então? [...2]"}]}
+        basic = {"kind": "basic", "ords": [0], "fields_hash": "f", "variants": [{"id": "2-p", "type": "paraphrase", "text": "Outra forma?"}]}
+        bank = V.Bank.from_bytes(self.bank_json({"1": ficha, "2": basic, "3": {**ficha, "images_html": [], "answers_html": ["A"], "variants": [{"id": "3-p", "type": "pergunta", "text": "Qual? [...]"}]}}, schema=3))
+        self.assertEqual(V.exposure_covariates(bank.entry(1)), {"note_kind": "cloze", "n_blanks": 2, "has_image": 1})
+        self.assertEqual(V.exposure_covariates(bank.entry(2)), {"note_kind": "basic", "n_blanks": None, "has_image": 0})
+        self.assertEqual(V.exposure_covariates(bank.entry(3)), {"note_kind": "cloze", "n_blanks": 1, "has_image": 0})
+
     def test_schema_2_cloze_entry_is_read_as_one_blank(self):
         old = {"kind": "cloze", "ords": [0], "q_field": 0, "fields_hash": "f", "answer_html": "TCP", "variants": [{"id": "c", "type": "reorder", "text": "É [...] confiável"}]}
         entry = V.Bank.from_bytes(self.bank_json({"1": old})).entry(1)

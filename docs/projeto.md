@@ -47,10 +47,10 @@ Os limiares numéricos estão no [protocolo](protocolo.md), seção 8, e foram f
 
 ## Delimitações
 
-- Só texto (Básico e Cloze), em português e inglês; só desktop.
+- Texto conceitual (Básico e Cloze com até 3 lacunas; no Cloze, as imagens ilustrativas ficam fixas), em português; só desktop.
 - Só variantes de mundo fechado; sem alegar melhora de aprendizagem de longo prazo.
 - "Aprendeu o conteúdo" é substituído por "recordação robusta a mudanças de forma".
-- Poucas pessoas: o resultado não se generaliza para a população de usuários.
+- Poucas pessoas (o irmão do autor é o participante principal): o resultado não se generaliza para a população de usuários.
 
 ## Contribuições esperadas
 

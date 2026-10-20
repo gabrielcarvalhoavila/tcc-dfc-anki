@@ -17,9 +17,9 @@ from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
 ADDON_VERSION = "0.3.0"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
-# Esquema do protocolo (seção 6.3). arm e variant_* só são preenchidos nas exposições sorteadas.
+# Esquema do protocolo (seção 6.3). arm e variant_* só são preenchidos nas exposições sorteadas; note_kind, n_blanks e has_image (covariáveis da nota, seção 7) em toda exposição sorteada.
 EVENT_COLUMNS: list[tuple[str, str]] = [
     ("event_id", "TEXT PRIMARY KEY"),
     ("session_id", "TEXT"),
@@ -61,6 +61,9 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("arm", "TEXT"),
     ("variant_id", "TEXT"),
     ("variant_type", "TEXT"),
+    ("note_kind", "TEXT"),
+    ("n_blanks", "INTEGER"),
+    ("has_image", "INTEGER"),
     ("shown_ok", "INTEGER"),
     ("shown_hash", "TEXT"),
     ("draw_seed", "TEXT"),

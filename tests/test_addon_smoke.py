@@ -375,12 +375,14 @@ class SmokeTest(unittest.TestCase):
         self.assertIn(row["variant_id"], ("2-paraphrase-aaa", "2-reorder-bbb"))
         self.assertEqual(row["shown_hash"], sha1_12(q))
         self.assertTrue(row["draw_seed"] and row["bank_hash"])
+        self.assertEqual((row["note_kind"], row["n_blanks"], row["has_image"]), ("basic", None, 0))
 
     def test_original_arm_shows_the_card_untouched(self):
         self.force(0.0)
         self.assertEqual(self.study(make_card()), ("Q", "Q<hr id=answer>A"))
         (row,) = self.rows()
         self.assertEqual((row["arm"], row["shown_ok"], row["variant_id"], row["shown_hash"]), ("original", 1, None, sha1_12("Q")))
+        self.assertEqual(row["note_kind"], "basic")  # as covariáveis da nota também vêm no braço original
 
     def test_same_day_exposure_is_logged_without_a_draw(self):
         self.force(1.0)
@@ -388,6 +390,7 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(self.study(make_card())[0], "Q")
         (row,) = self.rows()
         self.assertEqual((row["arm"], row["draw_note"], row["same_day"]), (None, "same_day", 1))
+        self.assertIsNone(row["note_kind"])  # sem sorteio não há covariáveis da nota
 
     def test_ineligible_cards_are_not_drawn(self):
         self.force(1.0)

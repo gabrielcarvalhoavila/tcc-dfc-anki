@@ -396,6 +396,7 @@ class RealHooksTest(unittest.TestCase):
         self.assertIn("Antecedentes:", q_sem)
         rows = self.mod._store.rows()
         self.assertEqual([(r["variant_type"], r["shown_ok"], r["draw_note"]) for r in rows], [("pergunta", 1, "ok"), ("sem_imagem", 1, "ok")])
+        self.assertEqual([(r["note_kind"], r["n_blanks"], r["has_image"]) for r in rows], [("cloze", 2, 1), ("cloze", 2, 1)])
 
 
 if __name__ == "__main__":

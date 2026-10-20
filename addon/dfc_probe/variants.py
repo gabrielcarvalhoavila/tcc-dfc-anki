@@ -113,7 +113,7 @@ class Bank:
         except (UnicodeDecodeError, json.JSONDecodeError) as e:
             raise ValueError(f"JSON inválido: {e}") from e
         if not isinstance(data, dict) or data.get("schema") not in SUPPORTED_SCHEMAS or not isinstance(data.get("notes"), dict):
-            raise ValueError("não é um banco de variantes (esperado schema 1 ou 2)")
+            raise ValueError("não é um banco de variantes (esperado schema 1, 2 ou 3)")
         notes: dict[int, dict[str, Any]] = {}
         skipped = 0
         for key, raw_entry in data["notes"].items():
@@ -203,6 +203,12 @@ def decide(
     arm = "variant" if rng.random() < VARIANT_PROBABILITY else "original"
     variant = pick_variant(entry, last_shown, rng) if arm == "variant" else None
     return Decision(arm, "ok", variant, f"{seed:016x}")
+
+
+def exposure_covariates(entry: dict[str, Any]) -> dict[str, Any]:
+    """Propriedades da nota que a análise usa como covariáveis (protocolo 7): tipo, número de lacunas (Cloze) e se há imagem (Cloze)."""
+    cloze = entry["kind"] == "cloze"
+    return {"note_kind": entry["kind"], "n_blanks": len(entry["answers_html"]) if cloze else None, "has_image": int(bool(entry.get("images_html")))}
 
 
 def _esc(text: str) -> str:
