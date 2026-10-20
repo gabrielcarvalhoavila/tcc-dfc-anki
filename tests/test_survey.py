@@ -67,16 +67,22 @@ def ac_note(note_id, card_id, front, back, model="Basic"):
     }
 
 
+def cloze_note(note_id, card_id, text):
+    return {
+        "noteId": note_id, "modelName": "Omissão de Palavras", "tags": [], "cards": [card_id],
+        "fields": {"Texto": {"value": text, "order": 0}, "Extra": {"value": "", "order": 1}},
+    }
+
+
+# nota -> (nota no formato do AnkiConnect, baralho, contadores do cartão, revlog)
 NOTES = {
     1: (ac_note(1, 101, "O que é NAT na prática?", "Tradução de endereços de rede."), "Redes", {"reps": 8, "lapses": 0, "queue": 2}, history(range(8))),
-    2: (
-        {"noteId": 2, "modelName": "Omissão de Palavras", "tags": [], "cards": [102],
-         "fields": {"Texto": {"value": "O {{c1::TCP}} é confiável", "order": 0}, "Extra": {"value": "", "order": 1}}},
-        "Redes::Camada 4", {"reps": 3, "lapses": 0, "queue": 2}, history([5, 6, 7]),
-    ),
+    2: (cloze_note(2, 102, "O {{c1::TCP}} é confiável"), "Redes::Camada 4", {"reps": 3, "lapses": 0, "queue": 2}, history([5, 6, 7])),
     3: (ac_note(3, 103, "Figura <img src='x.png'>", "resposta longa qualquer"), "Redes", {"reps": 9, "lapses": 0, "queue": 2}, history(range(9))),
     4: (ac_note(4, 104, "Qual a função do DNS?", "Converter nomes em endereços IP."), "Outro", {"reps": 6, "lapses": 0, "queue": -1}, []),
+    5: (cloze_note(5, 105, "O {{c1::TCP}} e o {{c2::UDP}} são protocolos"), "Redes", {"reps": 7, "lapses": 0, "queue": 2}, history(range(7))),
 }
+BY_CARD = {n[0]["cards"][0]: n for n in NOTES.values()}
 
 
 def fake_invoke(action, **params):
@@ -85,36 +91,58 @@ def fake_invoke(action, **params):
     if action == "notesInfo":
         return [NOTES[i][0] for i in params["notes"]]
     if action == "cardsInfo":
-        by_card = {n[0]["cards"][0]: n for n in NOTES.values()}
-        return [{"cardId": c, "deckName": by_card[c][1], "interval": 10, **by_card[c][2]} for c in params["cards"]]
+        return [{"cardId": c, "note": BY_CARD[c][0]["noteId"], "ord": 0, "deckName": BY_CARD[c][1], "interval": 10, **BY_CARD[c][2]} for c in params["cards"]]
+    if action == "findCards":
+        assert params["query"].startswith("rated:")
+        return [101, 102, 103, 105]  # com resposta recente (o 104 está suspenso e sem histórico)
     if action == "getReviewsOfCards":
         assert all(isinstance(c, int) for c in params["cards"])  # o AnkiConnect só aceita ids inteiros
-        by_card = {n[0]["cards"][0]: n for n in NOTES.values()}
-        return {str(c): by_card[c][3] for c in params["cards"]}
+        return {str(c): BY_CARD[c][3] for c in params["cards"]}
     raise AssertionError(action)
+
+
+def numbers(record):
+    return {k: record[k] for k in ("respostas", "eventos", "suspeitos")}
 
 
 class SurveyTest(unittest.TestCase):
     now = at(10) / 1000
 
-    def test_window_counts_only_eligible_notes_and_recent_answers(self):
-        parsed, reviews = survey.collect("deck:*", fake_invoke, log=lambda s: None)
-        self.assertEqual(sorted(reviews), [101, 102, 104])  # a nota com imagem nem é consultada
-        counts = survey.window_counts(parsed, reviews, since_ms=at(5))
-        self.assertEqual(dict(counts[("Redes", "basic")]), {"respostas": 3, "eventos": 3, "suspeitos": 3, "cartoes": 1})
-        self.assertEqual(dict(counts[("Redes", "cloze")]), {"respostas": 3, "eventos": 2, "suspeitos": 0, "cartoes": 1})
-        self.assertEqual(dict(counts[("Outro", "basic")]), {"respostas": 0, "eventos": 0, "suspeitos": 0, "cartoes": 0})
+    def test_recent_cards_count_answers_events_and_suspects_since_the_cutoff(self):
+        by_note = {r["note"]: r for r in survey.recent_cards(fake_invoke, 28, at(5))}
+        self.assertEqual(sorted(by_note), [1, 2, 3, 5])  # o 104 não tem resposta
+        self.assertEqual(numbers(by_note[1]), {"respostas": 3, "eventos": 3, "suspeitos": 3})
+        self.assertEqual(numbers(by_note[2]), {"respostas": 3, "eventos": 2, "suspeitos": 0})  # a primeira do revlog não tem anterior
+        self.assertEqual(numbers(by_note[5]), {"respostas": 2, "eventos": 2, "suspeitos": 2})
+        self.assertEqual((by_note[2]["deck"], by_note[2]["ord"]), ("Redes", 0))  # baralho raiz
 
-    def test_report_has_note_types_decks_and_projection(self):
+    def test_buckets_say_why_an_answer_cannot_be_drawn(self):
+        parsed, _ = survey.collect("deck:*", fake_invoke, 28, at(0), log=lambda s: None)
+        by_id = {c.note_id: c for c in parsed}
+        self.assertEqual(survey.bucket(by_id[1], 0), "sorteavel")
+        self.assertEqual(survey.bucket(by_id[1], 1), "outro cartao da nota")
+        self.assertEqual(survey.bucket(by_id[3], 0), "media_or_latex")
+        self.assertEqual(survey.bucket(by_id[5], 0), "so_multi_cloze")
+        self.assertEqual(survey.bucket(None, 0), "nota fora da busca")
+        img = cards.parse_note(cloze_note(9, 109, "O {{c1::TCP}} e o {{c2::UDP}} <img src='a.png'>"))
+        self.assertEqual(survey.bucket(img, 0), "multi_cloze+media_or_latex")
+
+    def test_report_has_note_types_decks_coverage_and_projections(self):
         _, lines = survey.run("deck:*", fake_invoke, days=28, rollover_hour=4, now=self.now, log=lambda s: None)
         text = "\n".join(lines)
-        self.assertIn("notas: 4  elegiveis: 3", text)
-        self.assertRegex(text, r"Omissão de Palavras\s+cloze\s+1\s+1")
+        self.assertIn("notas: 5  elegiveis: 3", text)
+        self.assertRegex(text, r"Omissão de Palavras\s+cloze\s+2\s+1")
         self.assertIn("media_or_latex 1", text)
         self.assertRegex(text, r"Outro\s+1\s+1\s+0\s+0")  # elegível, mas suspensa: não conta como ativa
-        self.assertRegex(text, r"Redes\s+3\s+2\s+2\s+1")  # 3 notas (uma com imagem), 2 elegíveis, 2 ativas, 1 suspeita
-        self.assertIn("total: 9 eventos (3 suspeitos, 6 controles) em 2 cartoes", text)
+        self.assertRegex(text, r"Redes\s+4\s+2\s+2\s+1")  # 4 notas (uma com imagem e uma com duas lacunas), 2 elegíveis, 2 ativas, 1 suspeita
+        self.assertIn("respostas de qualquer nota: 27", text)
+        self.assertRegex(text, r"sorteavel\s+11\s+41%\s+9\s+3")
+        self.assertRegex(text, r"media_or_latex\s+9\s+33%")
+        self.assertRegex(text, r"so_multi_cloze\s+7\s+26%\s+6\s+2")
+        self.assertRegex(text, r"Redes\s+27\s+11\n")
+        self.assertRegex(text, r"Redes\s+basic\s+1\s+7\s+3\s+4")
         self.assertIn("~7 eventos (~2 suspeitos)", text)  # 21/28 de 9 e de 3
+        self.assertIn("+6 eventos (+2 suspeitos) em 28 dias; na janela: ~11 eventos (~4 suspeitos)", text)
 
     def test_cli_prints_only_aggregates_and_can_save_the_notes(self):
         out = os.path.join(tempfile.mkdtemp(), "notas.jsonl")
@@ -122,11 +150,11 @@ class SurveyTest(unittest.TestCase):
         with mock.patch.object(ankiconnect, "invoke", fake_invoke), mock.patch("dfc_pipeline.survey.time.time", return_value=self.now), contextlib.redirect_stdout(buf):
             self.assertEqual(cli.main(["survey", "--out", out]), 0)
         printed = buf.getvalue()
-        self.assertIn("total: 9 eventos", printed)
+        self.assertIn("respostas de qualquer nota: 27", printed)
         self.assertNotIn("Tradução de endereços", printed)  # nenhum texto de cartão
         with open(out, encoding="utf-8") as f:
             saved = [json.loads(line) for line in f]
-        self.assertEqual([d["note_id"] for d in saved], [1, 2, 3, 4])
+        self.assertEqual([d["note_id"] for d in saved], [1, 2, 3, 4, 5])
         self.assertEqual(cards.Card.from_dict(saved[0]).decks, ["Redes"])
 
 
