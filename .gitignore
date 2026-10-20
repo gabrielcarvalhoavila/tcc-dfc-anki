@@ -1,0 +1,18 @@
+# dados locais do estudo: logs de revisão, variantes, chaves
+data/
+dist/
+.env
+*.sqlite3
+*.db
+
+# add-on em execução
+user_files/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Anki
+*.ankiaddon
