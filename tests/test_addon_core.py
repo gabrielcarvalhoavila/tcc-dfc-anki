@@ -119,6 +119,22 @@ class TrackerTest(unittest.TestCase):
         tracker.answered(b, 3)
         self.assertIsNone(tracker.begin_exposure(a)["inherit"])  # outra resposta no meio
 
+    def test_exposure_does_not_inherit_in_preview_mode(self):
+        tracker = core.EventTracker(self.store, lambda c: {**snapshot(c), "mode": "filtered_no_resched"}, "26.05", self.clock)
+        a = types.SimpleNamespace(id=1)
+        tracker.begin_exposure(a)["extra"].update(arm="variant")
+        tracker.answered(a, 3)
+        self.assertIsNone(tracker.begin_exposure(a)["inherit"])  # o reps pode não avançar sem reagendar
+
+    def test_flag_last_reaches_the_inherited_decision_only_for_the_last_event(self):
+        a = types.SimpleNamespace(id=1)
+        self.tracker.begin_exposure(a)["extra"].update(arm="variant")
+        rec = self.tracker.answered(a, 3)
+        self.tracker.flag_last("outro-evento")
+        self.assertNotIn("flag_bad", self.tracker.last_answered["extra"])
+        self.tracker.flag_last(rec["event_id"])
+        self.assertEqual(self.tracker.begin_exposure(a)["inherit"]["flag_bad"], 1)
+
     def test_same_exposure_is_reused_until_answered(self):
         a = types.SimpleNamespace(id=1)
         first = self.tracker.begin_exposure(a)

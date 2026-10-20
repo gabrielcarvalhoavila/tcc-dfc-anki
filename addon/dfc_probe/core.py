@@ -16,7 +16,7 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.2.1"
+ADDON_VERSION = "0.2.2"
 SCHEMA_VERSION = 4
 
 # Esquema do protocolo (seção 6.3). arm e variant_* só são preenchidos nas exposições sorteadas.
@@ -167,7 +167,13 @@ class EventTracker:
             return p
         snap = self.snapshot_fn(card)
         la = self.last_answered
-        same_state = la is not None and la["card_id"] == snap.get("card_id") and la["reps"] is not None and la["reps"] == snap.get("reps")
+        same_state = (
+            la is not None
+            and snap.get("mode") != "filtered_no_resched"  # sem reagendar, o reps pode não avançar: não prova que a resposta foi desfeita
+            and la["card_id"] == snap.get("card_id")
+            and la["reps"] is not None
+            and la["reps"] == snap.get("reps")
+        )
         self.pending = {
             "event_id": uuid.uuid4().hex,
             "card_id": snap.get("card_id"),
@@ -212,9 +218,15 @@ class EventTracker:
             if p["a_shown_at"] is not None:
                 rec["t_reveal_ms"] = int((p["a_shown_at"] - p["q_shown_at"]) * 1000)
         self.store.insert(rec)
-        self.last_answered = {"card_id": rec.get("card_id"), "reps": rec.get("reps"), "extra": dict(p["extra"])} if p else None
+        self.last_answered = {"event_id": rec["event_id"], "card_id": rec.get("card_id"), "reps": rec.get("reps"), "extra": dict(p["extra"])} if p else None
         self.pending = None
         return rec
+
+    def flag_last(self, event_id: str) -> None:
+        """A marca "variante ruim" feita depois da resposta (menu) também vale para a decisão que um Ctrl+Z reaproveitaria."""
+        la = self.last_answered
+        if la is not None and la["event_id"] == event_id:
+            la["extra"]["flag_bad"] = 1
 
 
 def get_salt(path: str) -> bytes:

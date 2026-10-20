@@ -136,6 +136,8 @@ def _prepare_exposure(p: dict, card) -> None:
         if prior["arm"] == "original" or again is not None:
             d = variants.Decision(prior["arm"], "undo_redo", again, prior.get("draw_seed"))
     extra.update(arm=d.arm, draw_note=d.reason, draw_seed=d.seed, bank_hash=_bank.hash if _bank is not None else None)
+    if d.reason == "undo_redo" and prior.get("flag_bad"):
+        extra["flag_bad"] = 1  # a variante já marcada como ruim continua marcada depois do Ctrl+Z
     if d.arm is None:
         return
     extra["shown_ok"] = 1
@@ -200,6 +202,8 @@ def _mark_bad_last() -> None:
         tooltip("DFC Probe: a última resposta não foi de uma variante.")
         return
     _store.mark_bad(row["event_id"])
+    if _tracker is not None:
+        _tracker.flag_last(row["event_id"])
     tooltip("DFC Probe: última variante marcada como ruim.")
 
 

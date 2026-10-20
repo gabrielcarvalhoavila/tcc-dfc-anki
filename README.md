@@ -11,7 +11,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | M0 | Protocolo v1.1 congelado | 20/10 | Feito (v1 e v1.1 em 20/10, antes de qualquer sorteio) |
 | M2 | Add-on v0 (só registro) | 27/10 | Feito em 20/10: 12 revisões no Anki 26.05 real conferidas contra o histórico do Anki, 0 divergências em nota, horário, tempo, intervalo anterior e tipo; a resposta desfeita (Ctrl+Z) fica sem par e é marcada na exportação |
 | M1 | Banco de variantes e auditoria de 100 | 28/10 (irmão: 30/10) | Código pronto e testado com LLM falso; falta conta no OpenRouter, modelo fixo, geração e auditoria |
-| M3 | Add-on v1 (sorteio e exibição) | 30/10 | Código pronto (0.2.1), testado com o motor real do Anki 26.5 sem interface e, na interface, a exibição das variantes; falta reconfirmar o atalho da variante ruim e o Ctrl+Z, e o banco real (roteiro em [arquitetura](docs/arquitetura.md)) |
+| M3 | Add-on v1 (sorteio e exibição) | 30/10 | Código pronto (0.2.2); testado com o motor real do Anki 26.5 sem interface e, na interface (20/10), exibição das variantes, tecla `x` e Ctrl+Z; falta o banco real (roteiro em [arquitetura](docs/arquitetura.md)) |
 | M4 | Coleta | 2/11 a 22/11 | |
 | M5 | Análise | 23/11 a 27/11 | Não iniciado |
 | M6 | Entrega do trabalho | 4/12 | |
@@ -24,7 +24,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | `docs/` | [projeto](docs/projeto.md), [fundamentação](docs/fundamentacao.md), [protocolo](docs/protocolo.md) (congelado), [piloto](docs/piloto-relampago.md), [arquitetura](docs/arquitetura.md), [desvios](docs/desvios.md) |
 | `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
-| `tests/` | 94 testes, sem rede; 11 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
+| `tests/` | 98 testes, sem rede; 11 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |

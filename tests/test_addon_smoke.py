@@ -572,6 +572,28 @@ class SmokeTest(unittest.TestCase):
         self.study(make_card(id=1))  # a última resposta foi a do cartão 2: não herda
         self.assertEqual([(r["arm"], r["draw_note"]) for r in self.rows()], [("variant", "ok"), ("variant", "ok"), ("original", "ok")])
 
+    def test_after_ctrl_z_the_bad_flag_of_the_variant_stays(self):
+        self.force(1.0)
+        shortcuts = []
+        self.hooks.state_shortcuts_will_change[0]("review", shortcuts)
+        card = make_card()
+        self.hooks.card_will_show[0]("Q", card, "reviewQuestion")
+        self.hooks.reviewer_did_show_question[0](card)
+        shortcuts[0][1]()
+        self.hooks.reviewer_did_answer_card[0](None, card, 3)
+        self.study(make_card())  # Ctrl+Z e responder de novo, sem apertar a tecla outra vez
+        self.study(make_card())
+        self.assertEqual([r["flag_bad"] for r in self.rows()], [1, 1, 1])
+        self.study(make_card(reps=7))  # resposta válida: a marca não passa para a exposição seguinte
+        self.assertEqual(self.rows()[-1]["flag_bad"], 0)
+
+    def test_after_ctrl_z_a_variant_marked_from_the_menu_stays_marked(self):
+        self.force(1.0)
+        self.study(make_card())
+        self.menu_action("Marcar a última resposta como variante ruim").triggered.emit(False)
+        self.study(make_card())  # Ctrl+Z e responder de novo
+        self.assertEqual([r["flag_bad"] for r in self.rows()], [1, 1])
+
     def test_draw_switch_in_the_menu_writes_the_config(self):
         draw = self.menu_tools.menus[0].actions[1]
         draw.toggled.emit(False)
