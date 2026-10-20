@@ -11,7 +11,7 @@ from aqt.qt import QAction, QFileDialog, QInputDialog
 from aqt.utils import showInfo, tooltip
 
 from . import core
-from .anki_adapter import anki_version, make_snapshot_fn
+from .anki_adapter import anki_version, make_snapshot_fn, scheduler_name
 
 ADDON_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_FILES = os.environ.get("DFC_PROBE_USER_FILES") or os.path.join(ADDON_DIR, "user_files")
@@ -93,9 +93,10 @@ def _toggle(checked) -> None:
 @_safe
 def _status() -> None:
     n = _store.count() if _store else 0
+    sched = scheduler_name(mw.col) if mw.col is not None else None
     showInfo(
         f"DFC Probe {core.ADDON_VERSION}\n\nEventos registrados: {n}\nBanco: {DB_PATH}\n"
-        f"Registro: {'ligado' if _enabled() else 'desligado'}\nErros: {ERR_LOG}"
+        f"Registro: {'ligado' if _enabled() else 'desligado'}\nAgendador: {sched or 'desconhecido'}\nErros: {ERR_LOG}"
     )
 
 

@@ -16,8 +16,8 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.1.1"
-SCHEMA_VERSION = 1
+ADDON_VERSION = "0.1.2"
+SCHEMA_VERSION = 2
 
 # Esquema do protocolo (seção 6.3). arm, variant_id e variant_type ficam vazios até o v1.
 EVENT_COLUMNS: list[tuple[str, str]] = [
@@ -50,6 +50,8 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("mode", "TEXT"),
     ("fsrs_stability", "REAL"),
     ("fsrs_difficulty", "REAL"),
+    ("scheduler", "TEXT"),
+    ("desired_retention", "REAL"),
     ("ease", "INTEGER"),
     ("t_reveal_ms", "INTEGER"),
     ("t_total_ms", "INTEGER"),
@@ -79,8 +81,12 @@ class EventStore:
         with closing(self._connect()) as db:
             cols = ", ".join(f"{name} {kind}" for name, kind in EVENT_COLUMNS)
             db.execute(f"CREATE TABLE IF NOT EXISTS events ({cols})")
+            have = {r["name"] for r in db.execute("PRAGMA table_info(events)")}
+            for name, kind in EVENT_COLUMNS:
+                if name not in have:
+                    db.execute(f"ALTER TABLE events ADD COLUMN {name} {kind}")
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
-            db.execute("INSERT OR IGNORE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
             db.commit()
 
     def _connect(self) -> sqlite3.Connection:

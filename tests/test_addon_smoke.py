@@ -69,6 +69,7 @@ class FakeNote:
 
 
 QUERIES = []
+CONFIG = {}
 
 
 def _scalar(sql, *args):
@@ -79,7 +80,16 @@ def _scalar(sql, *args):
 class FakeCol:
     sched = types.SimpleNamespace(today=1000)
     db = types.SimpleNamespace(scalar=_scalar, list=lambda sql, *a: [3, 3, 1])
-    decks = types.SimpleNamespace(name=lambda did: f"Deck{did}", get=lambda did, default=True: {"resched": False})
+    decks = types.SimpleNamespace(
+        name=lambda did: f"Deck{did}",
+        get=lambda did, default=True: {"resched": False},
+        config_dict_for_deck_id=lambda did: {"desiredRetention": 0.9},
+    )
+
+    def get_config(self, key, default=None):
+        if "raise" in CONFIG:
+            raise AttributeError("sem get_config")
+        return CONFIG.get(key, default)
 
     def find_notes(self, q):
         return [11, 12]
@@ -96,6 +106,8 @@ def make_card(**over):
 
 class SmokeTest(unittest.TestCase):
     def setUp(self):
+        CONFIG.clear()
+        CONFIG["fsrs"] = True
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["DFC_PROBE_USER_FILES"] = self.tmp.name
         self.cfg = {"enabled": True, "anonymize_export": False}
@@ -152,6 +164,29 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual((row["overdue_days"], row["last_ease"], row["ease"]), (10, 3, 3))
         self.assertIsNotNone(row["days_since_last_review"])
         self.assertIsNotNone(row["t_reveal_ms"])
+
+    def test_logs_scheduler_and_desired_retention(self):
+        self.review(make_card())
+        (row,) = self.mod._store.rows()
+        self.assertEqual((row["scheduler"], row["desired_retention"]), ("fsrs", 0.9))
+
+    def test_sm2_when_fsrs_is_off(self):
+        CONFIG["fsrs"] = False
+        self.review(make_card())
+        (row,) = self.mod._store.rows()
+        self.assertEqual((row["scheduler"], row["desired_retention"]), ("sm2", None))
+
+    def test_sm2_when_fsrs_key_is_missing(self):
+        CONFIG.clear()  # coleção que nunca ligou o FSRS não tem a chave
+        self.review(make_card())
+        (row,) = self.mod._store.rows()
+        self.assertEqual((row["scheduler"], row["desired_retention"]), ("sm2", None))
+
+    def test_unknown_scheduler_is_null(self):
+        CONFIG["raise"] = True
+        self.review(make_card())
+        (row,) = self.mod._store.rows()
+        self.assertEqual((row["scheduler"], row["desired_retention"]), (None, None))
 
     def test_filtered_deck_without_resched_is_marked(self):
         self.review(make_card(odid=7, odue=985))

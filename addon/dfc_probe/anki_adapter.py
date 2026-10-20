@@ -27,6 +27,14 @@ def anki_version() -> str:
         return "unknown"
 
 
+def scheduler_name(col: Any) -> Any:
+    # sem a chave "fsrs" na configuração (nunca ligado), o Anki considera desligado
+    try:
+        return "fsrs" if col.get_config("fsrs") else "sm2"
+    except Exception:
+        return None
+
+
 def _model_name(card: Any) -> Any:
     note = _safe(lambda: card.note())
     nt = _safe(lambda: note.note_type()) if note is not None else None
@@ -57,6 +65,8 @@ def make_snapshot_fn(mw: Any) -> Callable[[Any], dict[str, Any]]:
         else:
             mode = "regular"
         ms = _safe(lambda: card.memory_state)
+        scheduler = scheduler_name(col)
+        retention = _safe(lambda: col.decks.config_dict_for_deck_id(deck_id).get("desiredRetention")) if scheduler == "fsrs" else None
         return {
             "card_id": card.id,
             "note_id": card.nid,
@@ -79,6 +89,8 @@ def make_snapshot_fn(mw: Any) -> Callable[[Any], dict[str, Any]]:
             "mode": mode,
             "fsrs_stability": _safe(lambda: ms.stability) if ms else None,
             "fsrs_difficulty": _safe(lambda: ms.difficulty) if ms else None,
+            "scheduler": scheduler,
+            "desired_retention": retention,
         }
 
     return snapshot

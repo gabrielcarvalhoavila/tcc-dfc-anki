@@ -3,6 +3,7 @@ import csv
 import importlib.util
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import types
@@ -143,6 +144,23 @@ class ExportTest(unittest.TestCase):
     def test_note_record(self):
         rec = core.note_to_record(7, "g", "Basic", [("Front", "q"), ("Back", "a")], ["t"], ["B", "A", "A"])
         self.assertEqual(rec, {"note_id": 7, "guid": "g", "model": "Basic", "fields": {"Front": "q", "Back": "a"}, "tags": ["t"], "decks": ["A", "B"]})
+
+
+class MigrationTest(unittest.TestCase):
+    def test_old_schema_gets_new_columns_and_keeps_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "old.sqlite3")
+            db = sqlite3.connect(path)
+            db.execute("CREATE TABLE events (event_id TEXT PRIMARY KEY, note_id INTEGER, ease INTEGER)")
+            db.execute("INSERT INTO events VALUES ('e1', 5, 3)")
+            db.commit()
+            db.close()
+            store = core.EventStore(path)
+            store.insert({"event_id": "e2", "scheduler": "sm2"})
+            rows = {r["event_id"]: r for r in store.rows()}
+            self.assertEqual((rows["e1"]["note_id"], rows["e1"]["ease"], rows["e1"]["scheduler"]), (5, 3, None))
+            self.assertEqual(rows["e2"]["scheduler"], "sm2")
+            core.EventStore(path)  # reabrir não falha nem duplica colunas
 
 
 if __name__ == "__main__":
