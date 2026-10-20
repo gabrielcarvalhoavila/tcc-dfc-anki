@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from difflib import SequenceMatcher
 from typing import Any, Callable, Optional
 
 from .cards import BLANK_RE, Card
@@ -11,6 +12,7 @@ from .prompts import JUDGE_PROMPT_VERSION, build_judge_messages
 from .util import append_jsonl, as_bool, now_iso, read_jsonl, tokens, write_jsonl
 
 MIN_DISTANCE = 0.30
+MIN_DISTANCE_REORDER = 0.20  # reordenar muda pouco as palavras: a distância do reorder é pela ordem delas e o limiar é menor
 LEAK_MAX = 0.5
 STOPWORDS = frozenset(
     "a o as os um uma uns umas de do da dos das em no na nos nas por para com sem sob sobre entre e ou que se "
@@ -23,6 +25,14 @@ def jaccard_distance(a: str, b: str) -> float:
     if not sa and not sb:
         return 0.0
     return 1 - len(sa & sb) / len(sa | sb)
+
+
+def sequence_distance(a: str, b: str) -> float:
+    """Distância pela ordem das palavras: uma reordenação pura tem distância de Jaccard zero, mas não esta."""
+    ta, tb = tokens(a), tokens(b)
+    if not ta and not tb:
+        return 0.0
+    return 1 - SequenceMatcher(None, ta, tb, autojunk=False).ratio()
 
 
 def first_words_differ(a: str, b: str, n: int = 3) -> bool:
@@ -43,30 +53,49 @@ def leak_ratio(question: str, answer: str, variant: str) -> float:
     return sum(t in v for t in ans) / len(ans)
 
 
-def markers_ok(card: Card, text: str) -> bool:
-    """Cloze: cada marcador esperado aparece uma vez (na ordem do original, se são vários), sem outros marcadores nem marcas de template."""
+def marker_positions(card: Card, text: str) -> Optional[list[int]]:
+    """Posição de cada marcador esperado no texto; None se algum falta ou se repete."""
+    if any(text.count(m) != 1 for m in card.markers):
+        return None
+    return [text.index(m) for m in card.markers]
+
+
+def markers_ok(card: Card, text: str, ordered: bool = True) -> bool:
+    """Cloze: cada marcador esperado aparece uma vez (na ordem do original, salvo em `reorder`), sem outros marcadores nem marcas de template."""
     if "{{" in text or "}}" in text or len(BLANK_RE.findall(text)) != len(card.markers):
         return False
-    if any(text.count(m) != 1 for m in card.markers):
-        return False
-    pos = [text.index(m) for m in card.markers]
-    return pos == sorted(pos)
+    pos = marker_positions(card, text)
+    return pos is not None and (not ordered or pos == sorted(pos))
 
 
-def decide(card: Card, variant: dict[str, str], judge: Optional[dict[str, Any]], *, min_distance: float = MIN_DISTANCE, leak_max: float = LEAK_MAX) -> tuple[bool, list[str], dict[str, float]]:
+def decide(
+    card: Card,
+    variant: dict[str, str],
+    judge: Optional[dict[str, Any]],
+    *,
+    min_distance: float = MIN_DISTANCE,
+    min_distance_reorder: float = MIN_DISTANCE_REORDER,
+    leak_max: float = LEAK_MAX,
+) -> tuple[bool, list[str], dict[str, float]]:
     text = variant["text"]
+    reorder = variant["type"] == "reorder"
     reasons: list[str] = []
     question, plain = BLANK_RE.sub(" ", card.question_text), BLANK_RE.sub(" ", text)
-    dist = jaccard_distance(question, plain)
+    pos = marker_positions(card, text) if card.kind == "cloze" else None
+    moved = pos is not None and pos != sorted(pos)  # num reorder de Cloze, algum item (e o seu marcador) mudou de lugar
+    if reorder:  # os marcadores numerados entram como palavras: mover um item move a sua lacuna
+        dist = sequence_distance(card.question_text, text)
+    else:
+        dist = jaccard_distance(question, plain)
     lr = max(leak_ratio(question, a, plain) for a in (card.answers_text if card.kind == "cloze" else [card.answer_text]))
-    if dist < min_distance:
+    if dist < (min_distance_reorder if reorder else min_distance) and not (reorder and moved):
         reasons.append("too_similar")
     if variant["type"] == "cue_swap" and not first_words_differ(card.question_text, text):
         reasons.append("same_start")
     if lr >= leak_max:
         reasons.append("leak_heuristic")
     if card.kind == "cloze":
-        if not markers_ok(card, text):
+        if not markers_ok(card, text, ordered=not reorder):
             reasons.append("cloze_placeholder")
         if variant["type"] == "pergunta" and "?" not in text:
             reasons.append("not_a_question")
@@ -104,6 +133,7 @@ def validate(
     delay: float = 0.0,
     retry_errors: bool = False,
     min_distance: float = MIN_DISTANCE,
+    min_distance_reorder: float = MIN_DISTANCE_REORDER,
     leak_max: float = LEAK_MAX,
     log: Callable[[str], None] = print,
 ) -> Counter:
@@ -125,7 +155,7 @@ def validate(
     for i, (note_id, v) in enumerate(todo, 1):
         card = cards_by_id[note_id]
         judge = judge_variant(client, card, v["text"])
-        ok, reasons, metrics = decide(card, v, judge, min_distance=min_distance, leak_max=leak_max)
+        ok, reasons, metrics = decide(card, v, judge, min_distance=min_distance, min_distance_reorder=min_distance_reorder, leak_max=leak_max)
         append_jsonl(
             out_path,
             {

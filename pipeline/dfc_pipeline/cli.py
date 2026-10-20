@@ -13,7 +13,7 @@ from .cards import Card, parse_note, summarize
 from .generate import generate
 from .llm import FakeLLM, LLMClient
 from .util import read_jsonl, write_jsonl
-from .validate import LEAK_MAX, MIN_DISTANCE, validate
+from .validate import LEAK_MAX, MIN_DISTANCE, MIN_DISTANCE_REORDER, validate
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -89,7 +89,8 @@ def cmd_validate(a: argparse.Namespace) -> int:
     client = make_client("judge", a.dry_run)
     stats = validate(
         cards, list(read_jsonl(a.generation)), client, a.out,
-        limit=a.limit, delay=a.delay, retry_errors=a.retry_errors, min_distance=a.min_distance, leak_max=a.leak_max,
+        limit=a.limit, delay=a.delay, retry_errors=a.retry_errors, min_distance=a.min_distance,
+        min_distance_reorder=a.min_distance_reorder, leak_max=a.leak_max,
     )
     print("validacao:", dict(stats), f"-> {a.out}")
     return 0
@@ -189,6 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--delay", type=float, default=0.0)
     v.add_argument("--retry-errors", action="store_true")
     v.add_argument("--min-distance", type=float, default=MIN_DISTANCE)
+    v.add_argument("--min-distance-reorder", type=float, default=MIN_DISTANCE_REORDER)
     v.add_argument("--leak-max", type=float, default=LEAK_MAX)
     v.add_argument("--dry-run", action="store_true")
     v.set_defaults(func=cmd_validate)

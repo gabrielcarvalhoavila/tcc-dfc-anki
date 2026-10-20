@@ -95,8 +95,15 @@ def _default_responder(messages: list[dict[str, str]]) -> str:
     user = json.loads(messages[-1]["content"])
     if "gera variantes" in system:
         if user.get("kind") == "cloze":
-            text = "Reformulação em forma de pergunta? " + " e ".join(b["marker"] for b in user["blanks"])
-            return json.dumps({"conceptual": True, "reason": "fake", "variants": [{"type": "pergunta", "text": text}]})
+            marks = [b["marker"] for b in user["blanks"]]
+            texts = {
+                "paraphrase": "Em outras palavras: " + " e ".join(marks),
+                "reorder": "Em outra ordem: " + " e ".join(reversed(marks)),
+                "cue_swap": "Outras pistas iniciais: " + " e ".join(marks),
+                "pergunta": "Reformulação em forma de pergunta? " + " e ".join(marks),
+            }
+            variants = [{"type": t, "text": x} for t, x in texts.items()]
+            return json.dumps({"conceptual": True, "reason": "fake", "variants": variants})
         q = user["question"]
         variants = [
             {"type": t, "text": f"Reformulação do tipo {t} desta pergunta: " + " ".join(reversed(q.split()))}

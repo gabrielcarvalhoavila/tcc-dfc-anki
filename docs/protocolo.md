@@ -1,6 +1,6 @@
 # Protocolo e plano: dependência da forma do cartão (DFC)
 
-**Versão 1.2, 2026-10-20. Congelado** com a tag Git `protocolo-v1.2` (as `protocolo-v1` e `protocolo-v1.1` ficam como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (2/11) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
+**Versão 1.3, 2026-10-20. Congelado** com a tag Git `protocolo-v1.3` (as `protocolo-v1`, `protocolo-v1.1` e `protocolo-v1.2` ficam como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (2/11) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
 
 **Como ler.** **(premissa)** = número meu, de calibração, não verificado em dados do estudo. † = vem da minha memória, não verifiquei. As datas da seção 11 são limites derivados da entrega (4/12) e da apresentação (18/12), não estimativas de esforço.
 
@@ -11,6 +11,7 @@
 | v1 | 20/10/2026 | Versão inicial (tag `protocolo-v1`, commit `e4d5eff`) |
 | v1.1 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. (1) O sorteio só ocorre se a última revisão do cartão foi em outro dia do Anki (seções 5, 6.3 e 6.3.1). (2) Esclarece que `reps` conta respostas em passos de aprendizado; o add-on registra `n_reviews` e a análise ganha uma sensibilidade com `n_reviews ≥ 5` (seções 5 e 7). (3) Resposta desfeita (sem par no histórico de revisões do Anki, ou substituída por outra do mesmo cartão e do mesmo `reps`) é erro do add-on (seções 5, 6.3 e 8). Hipóteses, desfecho e limiares não mudam. |
 | v1.2 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. Adapta o desenho ao participante principal, o irmão (estudante de vestibular), cujas fichas são Cloze com várias lacunas ocultas juntas e imagem. (1) Elegibilidade: Cloze com 1 a 3 lacunas ocultas ao mesmo tempo no mesmo cartão e com imagens, que ficam fixas; áudio, vídeo, fórmula e mídia na resposta seguem fora; texto visível de pelo menos 30 caracteres; respostas todas numéricas, Image Occlusion e baralhos de inglês ficam fora (seções 4.1 e 4.2). (2) Variantes do Cloze: `pergunta` (LLM) e `sem_imagem` (determinística); o Básico mantém os quatro tipos (seção 6.1); a auditoria passa a perguntar se o texto sozinho basta (6.2). (3) O add-on registra `note_kind`, `n_blanks` e `has_image` (6.3); a análise agrupa por nota, acrescenta essas covariáveis e ganha sensibilidades para o efeito de escala (seção 7). Hipóteses, desfecho, definição de suspeito e limiares não mudam. |
+| v1.3 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. O Cloze passa de dois para cinco tipos de variante, cada um mudando uma dimensão da forma: `paraphrase` (palavras), `reorder` (ordem dos itens), `cue_swap` (palavras iniciais e rótulos), `pergunta` (formato) e `sem_imagem` (imagem). Os quatro de texto são gerados pelo LLM e a `sem_imagem` continua determinística (seção 6.1). A validação trata o `reorder` à parte, pela ordem das palavras e não pelo conjunto delas (6.2); a análise por tipo ganha grupos por dimensão e a ressalva de que nem todo tipo existe para toda nota (7). Hipóteses, desfecho, elegibilidade, definição de suspeito e limiares não mudam. |
 
 ---
 
@@ -37,7 +38,7 @@ No [experimento-relâmpago](piloto-relampago.md), 12 conceitos que a pessoa sabi
 3. Inversão (descrição → termo) entrega a resposta das outras formas: tipo secundário, sempre com uma forma por exposição.
 4. 12 pares só excluem efeitos acima de ~26%: o estudo precisa de centenas de eventos (seção 8).
 5. Um único corretor e a autoavaliação são fontes de viés: mitigar com réplica (irmão) e, se houver prazo, resposta digitada com correção cega (6.7).
-6. Quando todos os cartões de uma coleção seguem o mesmo molde (como as fichas do irmão: título, imagem e linhas "rótulo: lacuna"), uma variante branda quase não muda o que a pessoa já viu, e um resultado nulo seria pouco informativo. Por isso o Cloze passa a ter variantes que mudam o estilo (`pergunta`) ou tiram a imagem (`sem_imagem`) (v1.2, seção 6.1).
+6. Quando todos os cartões de uma coleção seguem o mesmo molde (como as fichas do irmão: título, imagem e linhas "rótulo: lacuna"), uma única variante forte mediria só uma dimensão da forma e deixaria dúvida sobre o que mudou. Por isso o Cloze tem uma variante para cada dimensão: palavras, ordem, palavras iniciais, formato e imagem (v1.3, seção 6.1).
 
 ---
 
@@ -72,7 +73,7 @@ Tipos Básico e Cloze; conceito (não vocabulário, número, data ou lista orden
 - **Cloze:** de 1 a 3 lacunas ocultas ao mesmo tempo no mesmo cartão, todas com o mesmo número `cN` (nota com vários números gera vários cartões e fica fora, assim como a nota com mais de 3 lacunas). O campo da lacuna pode ter **imagens**, que ficam fixas nas duas formas, exceto na variante `sem_imagem`. Continuam fora áudio, vídeo, fórmula ou LaTeX e qualquer mídia dentro de uma resposta. O texto visível (sem as lacunas e sem as imagens) precisa ter ≥ 30 caracteres, para haver contexto para uma pergunta, e as respostas não podem ser todas numéricas.
 - **Fora em qualquer tipo:** Image Occlusion e tipos com resposta digitada; baralhos de inglês (vocabulário e frases de mineração; decisão de 20/10: não é o que o estudo quer testar); subbaralhos em que a imagem é o enunciado (a regra dos 30 caracteres já tira a maior parte deles); respostas vazias. Os baralhos excluídos são definidos na consulta de exportação, antes da geração.
 
-A elegibilidade estrutural é checada pelo pipeline; "conceitual" e "o texto sozinho permite perguntar" são julgados pelo LLM na geração (sinal `conceptual` do registro) e conferidos na auditoria.
+A elegibilidade estrutural é checada pelo pipeline; "conceitual" e "o texto sozinho permite variantes" são julgados pelo LLM na geração (sinal `conceptual` do registro) e conferidos na auditoria.
 
 ### 4.3 Reativação controlada da Faculdade
 
@@ -113,29 +114,32 @@ Descongelar um subconjunto de cartões de texto elegíveis em ritmo fixo de 25 p
 | `reformat` | Formato (por exemplo, afirmação com lacuna no lugar da resposta, ou pergunta aberta) |
 | `cue_swap` | Remoção ou troca das palavras iniciais e das pistas superficiais |
 
-**Cloze (v1.2).** Dois tipos, e cada um muda uma dimensão:
+**Cloze (v1.2 e v1.3).** Cinco tipos, e cada um muda uma dimensão da forma:
 
 | Tipo | Quem gera | O que muda |
 |---|---|---|
-| `pergunta` | LLM | O texto vira perguntas diretas, uma por linha, com título, subtítulo e rótulos como contexto; cada lacuna continua oculta (`{{cN::resposta}}`) no lugar da resposta da pergunta correspondente; as imagens ficam no topo |
+| `paraphrase` | LLM | As palavras e a estrutura das frases (título, rótulos e linhas), como afirmações com lacuna; mesma ordem |
+| `reorder` | LLM | A ordem dos itens (linhas ou orações); cada lacuna acompanha o seu item |
+| `cue_swap` | LLM | As palavras iniciais e as pistas superficiais (título, subtítulo e rótulos); mesma ordem e estrutura |
+| `pergunta` | LLM | O formato: o texto vira perguntas diretas, uma por linha, com título, subtítulo e rótulos como contexto e cada lacuna no lugar da resposta da pergunta (é o `reformat` do Básico) |
 | `sem_imagem` | Determinística: o add-on tira as imagens do campo na hora de mostrar | Só a imagem; o resto do cartão fica idêntico |
 
-A `pergunta` muda o estilo (de rótulo seco para pergunta); a `sem_imagem` muda a presença da imagem, a dependência visual que originou a ideia do projeto. A `sem_imagem` só existe para a nota que tem imagem, para a qual o LLM gerou uma `pergunta` válida (sinal de que o texto sozinho basta, isto é, de que a imagem é ilustrativa) e que a auditoria não rejeitou. Paráfrase e reordenação ficam fora do Cloze: nas fichas do irmão, todas do mesmo molde, mudariam pouco o que ele já viu (lição 6 da seção 2). Como os cartões são maduros (intervalo médio ≈ 240 dias), cada cartão aparece, em geral, uma só vez na janela (no levantamento de 20/10, 1.321 eventos em 1.251 cartões) e uma `pergunta` por nota basta; havendo `pergunta` e `sem_imagem`, o add-on escolhe ao acaso entre as ainda não mostradas daquele cartão.
+Os quatro tipos de texto saem de uma só chamada ao LLM, que omite o tipo que não puder fazer com fidelidade (por exemplo, `reorder` num cartão de um só item). A `sem_imagem` só existe para a nota que tem imagem, tem ao menos uma variante de texto válida (sinal de que o texto sozinho basta, isto é, de que a imagem é ilustrativa) e não foi rejeitada na auditoria. Nas fichas do irmão, todas do mesmo molde, os tipos separam o que a pessoa pode ter memorizado: o que as palavras dizem, a ordem, as palavras iniciais, o formato ou a imagem (lição 6 da seção 2). Como os cartões são maduros (intervalo médio ≈ 240 dias), cada cartão aparece, em geral, uma só vez na janela (no levantamento de 20/10, 1.321 eventos em 1.251 cartões) e o add-on mostra uma variante, escolhida ao acaso entre as ainda não mostradas daquele cartão: o número de tipos não aumenta o número de eventos, só reparte entre os tipos os eventos do braço variante. A inversão fica fora do Cloze: trocaria a resposta (a ficha pediria o título a partir dos itens, e o banco guarda uma resposta por lacuna) e mediria outra coisa, a direção da recordação.
 
 Inversão (a resposta vira a pergunta) é tipo extra e secundário, desligado por padrão. **Regra de "mundo fechado":** a resposta esperada da variante é exatamente a do cartão e está contida no texto do próprio cartão; o LLM só reorganiza o que o cartão diz, sem conhecimento externo, e a variante não pode conter a resposta. No Cloze, cada lacuna aparece uma vez, na ordem do original, com a resposta do cartão, e o título e os rótulos viram o contexto das perguntas. Fora: instâncias ou aplicações novas, múltipla escolha com distratores.
 
-*Exemplos (inventados):* "O que o TCP garante que o UDP não garante?" → "Que propriedade distingue a transmissão do TCP da do UDP?" (paráfrase); "Heme é formado por protoporfirina e {{c1::ferro}}" → "{{c1::Protoporfirina}} e ferro formam o heme" (reordenação). Ficha de Cloze com duas lacunas (título "Mitose", imagem de uma célula): "Fase em que os cromossomos se alinham no equador: {{c1::metáfase}}" e "Fase em que as cromátides-irmãs se separam: {{c1::anáfase}}" → `pergunta`: "Em que fase da mitose os cromossomos se alinham no equador da célula? {{c1::metáfase}}" e "E em que fase as cromátides-irmãs se separam? {{c1::anáfase}}" (a imagem continua no topo); `sem_imagem`: a mesma ficha, sem a imagem.
+*Exemplos (inventados):* "O que o TCP garante que o UDP não garante?" → "Que propriedade distingue a transmissão do TCP da do UDP?" (paráfrase); "Heme é formado por protoporfirina e {{c1::ferro}}" → "{{c1::Protoporfirina}} e ferro formam o heme" (reordenação). Ficha de Cloze com três lacunas (título "Revolução Industrial", imagem de uma fábrica, linhas "País de origem: {{c1::Inglaterra}}", "Fonte de energia: {{c1::carvão}}" e "Setor pioneiro: {{c1::têxtil}}"): `paraphrase`, "A Revolução Industrial começou na {{c1::Inglaterra}}, movida a {{c1::carvão}}, e o primeiro setor a se industrializar foi o {{c1::têxtil}}"; `reorder`, as linhas na ordem setor, país e energia, cada lacuna com a sua linha; `cue_swap`, "Industrialização moderna" no lugar do título e "Onde começou", "Combustível" e "Ramo que saiu na frente" no lugar dos rótulos; `pergunta`, "Em que país começou a Revolução Industrial? {{c1::Inglaterra}}", "Que fonte de energia a impulsionou? {{c1::carvão}}" e "Qual setor foi o pioneiro? {{c1::têxtil}}"; `sem_imagem`, a mesma ficha, sem a imagem.
 
-LLM via OpenRouter, **modelo pago e fixo**; registrar modelo, versão, prompt (`gen-v2` e `judge-v2`, com instruções próprias para o Cloze), parâmetros e data. Nunca durante a revisão. O banco cobre os cartões elegíveis que vencem até 22/11 (consulta por vencimento na exportação): o add-on só sorteia notas que estão no banco. Para notas criadas durante a coleta, o pipeline roda de novo todo dia, antes de a nota virar elegível.
+LLM via OpenRouter, **modelo pago e fixo**; registrar modelo, versão, prompt (`gen-v3` e `judge-v3`, com instruções próprias para o Cloze), parâmetros e data. Nunca durante a revisão. O banco cobre os cartões elegíveis que vencem até 22/11 (consulta por vencimento na exportação): o add-on só sorteia notas que estão no banco. Para notas criadas durante a coleta, o pipeline roda de novo todo dia, antes de a nota virar elegível.
 
 ### 6.2 Validação
 
-- **Automática:** outro modelo (o juiz) confere se a resposta esperada responde à variante (em Cloze, a de cada lacuna), se há resposta alternativa plausível, se a variante entrega a resposta, se pergunta o mesmo que o original e o idioma; checagem lexical de distância mínima do original e de vazamento (em Cloze, sem contar os marcadores das lacunas) e de marcadores: cada lacuna aparece uma vez, na ordem do original e sem marcas de template, e a `pergunta` tem ao menos uma interrogação.
+- **Automática:** outro modelo (o juiz) confere se a resposta esperada responde à variante (em Cloze, a de cada lacuna), se há resposta alternativa plausível, se a variante entrega a resposta, se pergunta o mesmo que o original e o idioma; checagem lexical de distância mínima do original (pelo conjunto de palavras; no `reorder`, pela ordem delas, contando as lacunas numeradas, porque uma reordenação pura não muda o conjunto) e de vazamento (em Cloze, sem contar os marcadores das lacunas) e de marcadores: cada lacuna aparece uma vez, sem marcas de template e na ordem do original (no `reorder`, em qualquer ordem), e a `pergunta` tem ao menos uma interrogação.
 - **Humana:** amostra de ≥ 100 variantes aprovadas na validação automática, estratificada por tipo, revisada pelo autor (e ~30 pelo irmão). Critério: resposta preservada, sem ambiguidade, sem vazamento. A `sem_imagem` não passa pelo LLM e entra na amostra com a pergunta "só com o texto, ainda dá para responder o cartão?"; se não, a imagem não era ilustrativa e a variante é inválida. Alimenta H1. A taxa de aprovação automática é reportada à parte.
 
 ### 6.3 Sorteio e registro (add-on)
 
-A cada revisão elegível de outro dia do Anki: sorteio 50/50 com semente por evento; exibição nos dois lados do cartão; registro de `event_id`, `note_id`, `card_id`, braço, `variant_id`, tipo, covariáveis da nota (`note_kind`, `n_blanks`, `has_image`, também no braço original), hash do texto exibido, horário, versões do add-on e do Anki, tempo até revelar, resposta e tempo total, além do estado do cartão antes da resposta (`reps`, `lapses`, intervalo, dias desde a última revisão, `same_day`, `n_reviews`, últimas respostas, agendador e retenção desejada). Nas exposições do mesmo dia o original aparece sem sorteio e o evento é registrado com `same_day = 1`. Botão "variante ruim" e opção de desligar. Na exportação, o add-on concilia cada evento com o histórico de revisões do Anki (`revlog_match`) e marca os substituídos (`superseded`), o que detecta respostas desfeitas (Ctrl+Z). No Cloze, a `pergunta` aparece como texto simples e centralizado (perde a formatação do campo original), com as imagens no topo, e a `sem_imagem` é o campo original sem as imagens; a diferença entre a `pergunta` e o original inclui, portanto, a formatação (seção 9).
+A cada revisão elegível de outro dia do Anki: sorteio 50/50 com semente por evento; exibição nos dois lados do cartão; registro de `event_id`, `note_id`, `card_id`, braço, `variant_id`, tipo, covariáveis da nota (`note_kind`, `n_blanks`, `has_image`, também no braço original), hash do texto exibido, horário, versões do add-on e do Anki, tempo até revelar, resposta e tempo total, além do estado do cartão antes da resposta (`reps`, `lapses`, intervalo, dias desde a última revisão, `same_day`, `n_reviews`, últimas respostas, agendador e retenção desejada). Nas exposições do mesmo dia o original aparece sem sorteio e o evento é registrado com `same_day = 1`. Botão "variante ruim" e opção de desligar. Na exportação, o add-on concilia cada evento com o histórico de revisões do Anki (`revlog_match`) e marca os substituídos (`superseded`), o que detecta respostas desfeitas (Ctrl+Z). No Cloze, as variantes de texto aparecem como texto simples (perdem a formatação do campo original), com as imagens no topo, e a `sem_imagem` é o campo original sem as imagens; a diferença entre uma variante de texto e o original inclui, portanto, a formatação e a posição da imagem (seção 9).
 
 #### 6.3.1 Seleção de cartões: três camadas
 
@@ -164,7 +168,8 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 ## 7. Análise (pré-registrada)
 
 - **Primária (H2):** regressão logística com agrupamento: `falha ~ variante × suspeito + log(intervalo) + log(dias desde a última revisão) + tipo_de_variante + n_blanks + has_image`, com efeito aleatório (ou erro-padrão robusto) por **nota** e por usuário (`n_blanks` vale 0 no Básico). A estimativa reportada é a **DiD em pontos percentuais** (efeitos marginais), com IC 95%.
-- **Secundárias:** dose-resposta (efeito da variante × `reps`); por tipo de variante (`pergunta`, `sem_imagem` e os do Básico); por número de lacunas e por presença de imagem; E3 (AUC de um escore de candidato prevendo a falha da variante); custo (minutos e lapsos extras).
+- **Secundárias:** dose-resposta (efeito da variante × `reps`); por tipo de variante (`paraphrase`, `reorder`, `cue_swap`, `pergunta`, `sem_imagem` e os do Básico) e por dimensão (palavras, ordem, palavras iniciais, formato, imagem); por número de lacunas e por presença de imagem; E3 (AUC de um escore de candidato prevendo a falha da variante); custo (minutos e lapsos extras).
+- **Heterogeneidade entre tipos (v1.3):** a estimativa primária é a média sobre os tipos sorteados, e uma penalidade que só exista num tipo é diluída nela. Por isso as estimativas por tipo e por dimensão são relatadas com IC como exploratórias (com ≈ 100 eventos de variante por tipo só mostram efeitos grandes), e a conclusão de H2 vale para a média. Nem todo tipo existe para toda nota (`reorder` pede mais de um item; `sem_imagem`, uma imagem), então as comparações por tipo são ajustadas por `n_blanks` e `has_image`.
 - **Sensibilidade:** incluir eventos "variante ruim"; excluir a primeira revisão após a reativação; definição alternativa de suspeito (`reps ≥ 4`; e `n_reviews ≥ 5`); apenas eventos sem filtro de modo sonda; razão de chances na escala logit; subamostra digitada (se existir).
 - **Efeito de escala (v1.2):** se a variante for mais fácil (ou mais difícil) do que o original para todos, por exemplo a `pergunta` em relação ao rótulo seco, a DiD em pontos percentuais deixa de ser zero só porque os controles têm mais falha a perder (ou a ganhar), sem nenhuma dependência da forma. Por isso a interação é repetida nas escalas de razão de chances e de razão de risco e com a falha anterior do cartão (`last_ease`, `prev_eases`) como covariável, e o relatório diz se a conclusão de H2 muda de uma escala para outra.
 - **Multiplicidade:** um único desfecho primário; o restante é rotulado como exploratório.
@@ -209,7 +214,8 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 | Contaminação sequencial | Uma forma por exposição; variante nova a cada exposição |
 | Variante ruim | Validação, auditoria e botão "variante ruim" |
 | Efeito de escala (variante mais fácil ou mais difícil para todos) | Sensibilidade em razão de chances e de risco, com a falha anterior do cartão como covariável (seção 7) |
-| A `pergunta` muda também a formatação (texto simples e centralizado) | Declarada como parte do tratamento; a `sem_imagem` mantém a formatação original, e a análise por tipo mostra se o efeito vem de um só |
+| As variantes de texto do Cloze mudam também a formatação (texto simples) e a posição da imagem (no topo) | Declarado como parte do tratamento, comum aos quatro tipos de texto; a `sem_imagem` mantém a formatação original e serve de contraste |
+| Efeito diferente por tipo (a média dilui um efeito que só existe em um) | Estimativas por tipo e por dimensão como exploratórias; o primário é a média, e isso é declarado (seção 7) |
 | Imagem essencial para responder | Regra dos 30 caracteres, auditoria da `sem_imagem` e exclusão de subbaralhos em que a imagem é o enunciado |
 | Viés do experimentador (a hipótese é do autor) | Eventos do irmão como réplica; subamostra digitada com correção cega só se sobrar prazo (6.7) |
 | Poucos suspeitos | Modo sonda; irmão; relatar o menor efeito detectável |
@@ -232,7 +238,7 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 
 | Marco | Entrega | Pronto quando | Data-limite |
 |---|---|---|---|
-| M0 | Protocolo congelado (v1, v1.1 e v1.2) | Arquivo comitado com a tag da versão (a vigente é `protocolo-v1.2`); (opcional) registro no OSF † | **feito em 20/10** |
+| M0 | Protocolo congelado (v1, v1.1, v1.2 e v1.3) | Arquivo comitado com a tag da versão (a vigente é `protocolo-v1.3`); (opcional) registro no OSF † | **feito em 20/10** |
 | M1 | Banco de variantes offline (E1) | Cartões elegíveis do irmão e do autor processados, depois de um piloto com 20 a 30 cartões reais do irmão; auditoria de ≥ 100 variantes com H1 ≥ 85% | qua 28/10 |
 | M2 | Add-on v0 (só registro) | Registra as revisões do desktop sem quebrar o Anki; conferido contra o histórico de revisões do Anki | ter 27/10 |
 | M3 | Add-on v1 (sorteio e exibição) | Teste de fumaça: a variante aparece nos dois lados, o log bate com o Anki, "variante ruim" e desligar funcionam; instalado no Anki do autor e no do irmão | sex 30/10 |
@@ -252,14 +258,14 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 | Variantes ruins | H1 < 85% | Ajustar prompt ou modelo; restringir tipos; repetir a auditoria |
 | Anki atualiza e quebra o add-on | Nova versão instalada | Fixar a 26.05 |
 | Irmão desiste ou estuda bem menos (provas) | Sem dados dele, ou abaixo do mínimo na metade da janela | Mais voluntários; só o autor; E2 descritivo com o menor efeito detectável; ênfase em E1 e em viabilidade |
-| Imagem essencial em parte das fichas | `sem_imagem` abaixo de 70% na auditoria | A `sem_imagem` sai da análise primária e o banco segue só com a `pergunta` |
+| Imagem essencial em parte das fichas | `sem_imagem` abaixo de 70% na auditoria | A `sem_imagem` sai da análise primária e o banco segue só com as variantes de texto |
 | Resultado nulo ou inconclusivo | Seção 8.1 | Reportar como está; contribuição: pipeline validado, estimativa com intervalo e lições |
 
 ---
 
 ## 13. Registro e desvios
 
-Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1` e `protocolo-v1.2` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
+Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1`, `protocolo-v1.2` e `protocolo-v1.3` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
 
 ---
 
@@ -269,4 +275,5 @@ Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protoc
 - **Ao liberar a implementação (20/10):** suspeito `reps ≥ 5` (sensibilidade `≥ 4`); limiar de 10 pp; reativação de 25 por dia a partir de 2/11; agendamento normal do Anki; resposta digitada fora do v1; análise em Python.
 - **Antes do primeiro sorteio (20/10, v1.1):** sorteio só em exposições de outro dia do Anki; `reps ≥ 5` mantido, com `n_reviews` registrado e sensibilidade `n_reviews ≥ 5`; resposta desfeita conta como erro do add-on.
 - **Antes do primeiro sorteio (20/10, v1.2):** o irmão é o participante principal; entram Cloze com 1 a 3 lacunas e imagens fixas, e ficam fora Image Occlusion e os baralhos de inglês; variantes do Cloze: `pergunta` e `sem_imagem`; análise agrupada por nota, com `n_blanks` e `has_image` e sensibilidades para o efeito de escala.
+- **Antes do primeiro sorteio (20/10, v1.3):** o Cloze tem cinco tipos de variante, um por dimensão da forma (`paraphrase`, `reorder`, `cue_swap`, `pergunta` e `sem_imagem`); a inversão continua fora; a análise primária é a média sobre os tipos, e a análise por tipo e por dimensão é exploratória.
 - **Pendências fora do protocolo:** conta e créditos no OpenRouter (até 23/10) e piloto da geração com 20 a 30 cartões reais do irmão, para o autor e o irmão julgarem se o conteúdo se mantém e se a forma parece diferente.

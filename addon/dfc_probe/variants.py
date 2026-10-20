@@ -218,7 +218,7 @@ def _esc(text: str) -> str:
 def field_value(entry: dict[str, Any], variant: dict[str, Any], current_field: Optional[str] = None) -> tuple[str, list[str]]:
     """HTML do campo da pergunta com a variante, e os trechos que precisam aparecer na pergunta renderizada.
 
-    `sem_imagem` parte do campo atual da nota (`current_field`) e só tira as imagens; `pergunta` reescreve o texto e põe as imagens originais no topo.
+    `sem_imagem` parte do campo atual da nota (`current_field`) e só tira as imagens; as demais variantes de Cloze reescrevem o texto e põem as imagens originais no topo.
     """
     if variant["type"] == "sem_imagem":
         return IMG_RE.sub("", current_field or ""), []

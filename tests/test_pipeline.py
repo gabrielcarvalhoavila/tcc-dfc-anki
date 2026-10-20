@@ -221,6 +221,32 @@ class ValidateTest(unittest.TestCase):
         leaking = "Sobre a Questão Romana no governo Mussolini e o Tratado de Latrão: quais foram os antecedentes? [...1]\nEm que consiste? [...2]"
         self.assertIn("leak_heuristic", validate.decide(c, {"type": "pergunta", "text": leaking}, judge)[1])
 
+    def test_cloze_reorder_may_move_the_markers_but_the_other_types_keep_them_in_order(self):
+        c = cards.parse_note({"noteId": 7, "modelName": "Cloze", "fields": {"Text": "Governo Mussolini<br>Tratado de Latrão<br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}"}})
+        judge = {"answer_preserved": True}
+        reordered = "Consiste: [...2]\nAntecedentes: [...1]\nGoverno Mussolini\nTratado de Latrão"
+        ok, reasons, _ = validate.decide(c, {"type": "reorder", "text": reordered}, judge)
+        self.assertTrue(ok, reasons)
+        swapped_cues = "Fascismo italiano\nAcordo com a Igreja\nO que veio antes: [...2]\nO que ficou: [...1]"
+        self.assertIn("cloze_placeholder", validate.decide(c, {"type": "cue_swap", "text": swapped_cues}, judge)[1])
+        self.assertIn("cloze_placeholder", validate.decide(c, {"type": "reorder", "text": reordered.replace(" [...2]", "")}, judge)[1])
+        three = cards.parse_note({"noteId": 8, "modelName": "Cloze", "fields": {"Text": "Mitose<br>Fases<br>Prófase: {{c1::condensação}}<br>Metáfase: {{c1::alinhamento}}<br>Anáfase: {{c1::separação}}"}})
+        moved_one = "Mitose\nFases\nAnáfase: [...3]\nPrófase: [...1]\nMetáfase: [...2]"
+        self.assertTrue(validate.decide(three, {"type": "reorder", "text": moved_one}, judge)[0])  # um só item mudou de lugar: poucas palavras mudam, mas a ordem das lacunas sim
+        self.assertIn("too_similar", validate.decide(three, {"type": "reorder", "text": three.question_text}, judge)[1])
+        one = cards.parse_note({"noteId": 9, "modelName": "Cloze", "fields": {"Text": "O heme é formado por protoporfirina e {{c1::ferro}}"}})
+        self.assertTrue(validate.decide(one, {"type": "reorder", "text": "[...] e protoporfirina formam o heme"}, judge)[0])
+        self.assertIn("too_similar", validate.decide(one, {"type": "reorder", "text": one.question_text}, judge)[1])
+
+    def test_pure_reordering_passes_as_reorder_but_not_as_another_type(self):
+        c = cards.parse_note(ac_note(1, "O que o TCP garante que o UDP não garante?", "A entrega ordenada e confiável dos dados."))
+        judge = {"answer_preserved": True}
+        text = "O que o UDP não garante e o TCP garante?"
+        self.assertTrue(validate.decide(c, {"type": "reorder", "text": text}, judge)[0])
+        self.assertIn("too_similar", validate.decide(c, {"type": "paraphrase", "text": text}, judge)[1])  # as mesmas palavras: Jaccard zero
+        self.assertIn("too_similar", validate.decide(c, {"type": "reorder", "text": c.question_text}, judge)[1])
+        self.assertAlmostEqual(validate.sequence_distance("a b c d", "c d a b"), 0.5)
+
 
 class PipelineEndToEndTest(unittest.TestCase):
     def setUp(self):
@@ -276,29 +302,29 @@ class PipelineEndToEndTest(unittest.TestCase):
         self.assertEqual(bank["notes"]["1"]["kind"], "basic")
         self.assertEqual((bank["schema"], bank["notes"]["1"]["q_field"]), (3, 0))
 
-    def test_cloze_ficha_with_image_gets_pergunta_and_sem_imagem(self):
+    def test_cloze_ficha_with_image_gets_four_text_variants_and_sem_imagem(self):
         text = 'Mrs Dalloway<br><div><img src="d.png"></div><br>Personagens<br>Lucrezia é a: {{c1::esposa de Septimus}}<br>Que sofre com: {{c1::o trauma da guerra}}'
         ficha = cards.parse_note({"noteId": 10, "modelName": "Cloze", "fields": {"Text": text}, "decks": ["Leituras"]})
         self.assertTrue(ficha.eligible, ficha.reasons)
         generate.generate([ficha], FakeLLM(), self.p("g.jsonl"), log=lambda s: None)
         gen = list(read_jsonl(self.p("g.jsonl")))
-        self.assertEqual([v["type"] for v in gen[0]["variants"]], ["pergunta"])  # o LLM só gera a pergunta; sem_imagem é determinística
+        self.assertEqual([v["type"] for v in gen[0]["variants"]], ["paraphrase", "reorder", "cue_swap", "pergunta"])  # sem_imagem é determinística: entra no pack
         validate.validate({10: ficha}, gen, FakeLLM(), self.p("v.jsonl"), log=lambda s: None)
         val = list(read_jsonl(self.p("v.jsonl")))
-        self.assertTrue(val[0]["auto_valid"], val[0]["reasons"])
+        self.assertTrue(all(v["auto_valid"] for v in val), [v["reasons"] for v in val])
         bank = pack.build_bank([ficha], gen, val, allow_fake=True)
         entry = bank["notes"]["10"]
         self.assertEqual((bank["schema"], entry["kind"], entry["answers_html"], entry["images_html"]), (3, "cloze", ["esposa de Septimus", "o trauma da guerra"], ['<img src="d.png">']))
-        self.assertEqual([v["type"] for v in entry["variants"]], ["pergunta", "sem_imagem"])
-        self.assertEqual(entry["variants"][1], {"id": "10-sem_imagem", "type": "sem_imagem"})
+        self.assertEqual([v["type"] for v in entry["variants"]], ["paraphrase", "reorder", "cue_swap", "pergunta", "sem_imagem"])
+        self.assertEqual(entry["variants"][-1], {"id": "10-sem_imagem", "type": "sem_imagem"})
 
-        self.assertEqual(audit.build_sheet({10: ficha}, val, 2, 1, self.p("s.csv")), 2)
+        self.assertEqual(audit.build_sheet({10: ficha}, val, 5, 1, self.p("s.csv")), 5)
         with open(self.p("s.csv"), newline="", encoding="utf-8-sig") as f:
             rows = list(csv.DictReader(f))
-        self.assertEqual(sorted(r["type"] for r in rows), ["pergunta", "sem_imagem"])
+        self.assertEqual(sorted(r["type"] for r in rows), ["cue_swap", "paraphrase", "pergunta", "reorder", "sem_imagem"])
         self.assertIn("[...1]", rows[0]["original_question"])
         for r in rows:
-            r["human_ok"] = "s" if r["type"] == "pergunta" else "n"  # sem a imagem a pergunta não se sustenta
+            r["human_ok"] = "n" if r["type"] == "sem_imagem" else "s"  # sem a imagem o cartão não se sustenta
         with open(self.p("s.csv"), "w", newline="", encoding="utf-8-sig") as f:
             w = csv.DictWriter(f, fieldnames=audit.SHEET_COLUMNS)
             w.writeheader()
@@ -306,7 +332,12 @@ class PipelineEndToEndTest(unittest.TestCase):
         report = audit.score_sheet(self.p("s.csv"), min_n=1, min_n_type=1)
         self.assertEqual((report["exclude_types"], report["rejected_variant_ids"]), (["sem_imagem"], ["10-sem_imagem"]))
         again = pack.build_bank([ficha], gen, val, audit_report=report, allow_fake=True)
-        self.assertEqual([v["type"] for v in again["notes"]["10"]["variants"]], ["pergunta"])
+        self.assertEqual([v["type"] for v in again["notes"]["10"]["variants"]], ["paraphrase", "reorder", "cue_swap", "pergunta"])
+
+    def test_cloze_keeps_only_its_own_variant_types(self):
+        c = cards.parse_note({"noteId": 9, "modelName": "Cloze", "fields": {"Text": "O {{c1::TCP}} é um protocolo de transporte confiável"}})
+        raw = [{"type": t, "text": f"texto {t}"} for t in ("paraphrase", "reformat", "pergunta", "pergunta", "sem_imagem")]
+        self.assertEqual([v["type"] for v in generate.clean_variants(c, raw)], ["paraphrase", "pergunta"])
 
     def test_pack_skips_edited_notes(self):
         generate.generate(self.cards, FakeLLM(), self.p("gen.jsonl"), log=lambda s: None)

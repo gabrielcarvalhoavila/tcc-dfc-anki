@@ -143,6 +143,17 @@ class RealRenderTest(unittest.TestCase):
         self.assertNotIn("Antecedentes:", var_q + var_a)  # o molde de rótulos saiu
         self.assertEqual(self.col.get_note(note.id)["Text"], self.FICHA)  # nada foi gravado
 
+    def test_reorder_variant_keeps_each_answer_in_the_blank_of_its_own_item(self):
+        note, card = self.ficha()
+        variant = {"id": "v", "type": "reorder", "text": "Governo Mussolini\nConsiste: [...2]\nAntecedentes: [...1]"}
+        value, needles = self.variants.field_value(self.FICHA_ENTRY, variant, note.fields[0])
+        var_q, var_a = self.adapter.render_pair(self.col, card, 0, value)
+        self.assertTrue(all(n in var_q for n in needles), needles)
+        shown = re.sub(r"<[^>]+>", "", var_a)
+        self.assertIn("Consiste: reconhecimento do Vaticano", shown)  # o marcador leva a sua própria resposta, mesmo fora de ordem
+        self.assertIn("Antecedentes: Questão Romana", shown)
+        self.assertLess(shown.index("Consiste:"), shown.index("Antecedentes:"))
+
     def test_sem_imagem_variant_removes_only_the_image(self):
         note, card = self.ficha()
         value, needles = self.variants.field_value(self.FICHA_ENTRY, {"id": "1-sem_imagem", "type": "sem_imagem"}, note.fields[0])

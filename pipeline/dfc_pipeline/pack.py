@@ -43,7 +43,7 @@ def build_bank(
             continue
         sem_imagem_id = f"{card.note_id}-sem_imagem"
         if card.kind == "cloze" and card.images_html and "sem_imagem" not in excluded and sem_imagem_id not in rejected:
-            variants.append({"id": sem_imagem_id, "type": "sem_imagem"})  # o texto sozinho gerou uma pergunta válida: a imagem é ilustrativa
+            variants.append({"id": sem_imagem_id, "type": "sem_imagem"})  # há variante válida feita só do texto: a imagem é ilustrativa
         generators.add(g["generator"]["model"])
         entry: dict[str, Any] = {"kind": card.kind, "ords": card.ords, "q_field": card.q_field, "fields_hash": card.fields_hash, "variants": variants}
         if card.kind == "cloze":
