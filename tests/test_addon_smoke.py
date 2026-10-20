@@ -68,9 +68,17 @@ class FakeNote:
         return [types.SimpleNamespace(odid=0, did=1)]
 
 
+QUERIES = []
+
+
+def _scalar(sql, *args):
+    QUERIES.append(sql)
+    return 1_700_000_000_000
+
+
 class FakeCol:
     sched = types.SimpleNamespace(today=1000)
-    db = types.SimpleNamespace(scalar=lambda sql, *a: 1_700_000_000_000, list=lambda sql, *a: [3, 3, 1])
+    db = types.SimpleNamespace(scalar=_scalar, list=lambda sql, *a: [3, 3, 1])
     decks = types.SimpleNamespace(name=lambda did: f"Deck{did}", get=lambda did, default=True: {"resched": False})
 
     def find_notes(self, q):
@@ -134,7 +142,10 @@ class SmokeTest(unittest.TestCase):
         return next(a for a in self.menu_tools.menus[0].actions if a.text == label)
 
     def test_hooks_log_an_event_with_card_state(self):
+        QUERIES.clear()
         self.review(make_card())
+        # entradas manuais do revlog (ease 0, por exemplo "definir data") não contam como revisão
+        self.assertTrue(any("max(id)" in q and "ease > 0" in q for q in QUERIES), QUERIES)
         (row,) = self.mod._store.rows()
         self.assertEqual((row["note_id"], row["card_id"], row["reps"], row["lapses"], row["ivl"]), (2, 1, 6, 0, 30))
         self.assertEqual((row["model_name"], row["deck_name"], row["mode"]), ("Basic", "Deck3", "regular"))

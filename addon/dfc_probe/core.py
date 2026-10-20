@@ -16,7 +16,7 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.1.0"
+ADDON_VERSION = "0.1.1"
 SCHEMA_VERSION = 1
 
 # Esquema do protocolo (seção 6.3). arm, variant_id e variant_type ficam vazios até o v1.

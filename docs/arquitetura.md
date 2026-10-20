@@ -24,7 +24,7 @@ O add-on v0 (esta versão) cobre só `A -> I -> J`: registra as revisões e o te
 
 | Pasta | O que é | Estado (20/10) |
 |---|---|---|
-| `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0 (só registro): testado com Anki simulado; falta rodar no Anki real |
+| `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0.1.1 (só registro): conferido no Anki 26.05 real contra o revlog (7 revisões, 0 divergências) |
 | `pipeline/dfc_pipeline/` | Exportar, gerar, validar, auditar e empacotar variantes | Testado com LLM falso e servidor HTTP local; falta chave e modelo reais |
 | `tests/` | 29 testes (`scripts/run_tests.ps1`) | Passando |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes | |
@@ -83,7 +83,7 @@ Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em 
 
 ## Limites conhecidos
 
-- O add-on não foi executado no Anki real; o teste de fumaça usa um `aqt` simulado e só cobre ligação e lógica, não mudanças de API.
+- O sorteio e a exibição de variantes (v1) ainda não foram executados no Anki real; o registro (v0) foi conferido contra o `revlog` em 20/10 (7 revisões). O teste de fumaça usa um `aqt` simulado e só cobre ligação e lógica, não mudanças de API.
 - Elegibilidade estrutural não decide "conceitual": isso é o sinal `conceptual` do LLM, conferido na auditoria.
 - Notas Cloze com mais de uma lacuna ficam fora (seção 4.2 do protocolo).
 - O código do Anki é AGPL-3; o add-on usa a API dele, e as implicações de licença † precisam ser conferidas antes de publicar o código.

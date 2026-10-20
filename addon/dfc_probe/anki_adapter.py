@@ -48,7 +48,7 @@ def make_snapshot_fn(mw: Any) -> Callable[[Any], dict[str, Any]]:
         overdue = None
         if due is not None and today is not None and queue in (2, 3):
             overdue = int(today - due)
-        last_id = _safe(lambda: col.db.scalar("select max(id) from revlog where cid = ?", card.id))
+        last_id = _safe(lambda: col.db.scalar("select max(id) from revlog where cid = ? and ease > 0", card.id))
         eases = _safe(lambda: col.db.list("select ease from revlog where cid = ? and ease > 0 order by id desc limit 3", card.id), []) or []
         dyn = _safe(lambda: col.decks.get(card.did, default=False)) if odid else None
         resched = int(bool(dyn.get("resched", True))) if dyn else None

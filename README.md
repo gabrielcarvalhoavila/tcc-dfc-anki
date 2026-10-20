@@ -9,7 +9,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | Marco | O quê | Data-limite | Estado |
 |---|---|---|---|
 | M0 | Protocolo v1 congelado | 20/10 | Feito |
-| M2 | Add-on v0 (só registro) | 27/10 | Código pronto e testado com Anki simulado; falta instalar e conferir no Anki real |
+| M2 | Add-on v0 (só registro) | 27/10 | Feito em 20/10: 7 revisões no Anki 26.05 real conferidas contra o histórico do Anki, 0 divergências (nota, horário, tempo, intervalo anterior, tipo) |
 | M1 | Banco de variantes e auditoria de 100 | 28/10 (irmão: 30/10) | Código pronto e testado com LLM falso; falta conta no OpenRouter, modelo fixo, geração e auditoria |
 | M3 | Add-on v1 (sorteio e exibição) | 30/10 | Não iniciado |
 | M4 | Coleta | 2/11 a 22/11 | |
