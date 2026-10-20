@@ -34,7 +34,7 @@ O add-on v0 (esta versão) cobre só `A -> I -> J`: registra as revisões e o te
 
 - **Ganchos do Anki** ([`genhooks_gui.py`](https://github.com/ankitects/anki/blob/main/qt/tools/genhooks_gui.py)): `reviewer_did_show_question` (guarda o estado do cartão antes da resposta), `reviewer_did_show_answer` (tempo até revelar) e `reviewer_did_answer_card` (grava o evento). No v1: `card_will_show` para trocar o texto, nos dois lados do cartão.
 - **Só desktop:** add-ons não rodam no AnkiDroid nem no iOS; revisões no celular não geram eventos.
-- **Estado antes da resposta:** `reps`, `lapses`, intervalo, dias de atraso, dias desde a última revisão (consulta ao `revlog`), últimas três respostas, modo (regular, filtrado, filtrado sem reagendar) e, se existirem, estabilidade e dificuldade do FSRS.
+- **Estado antes da resposta:** `reps`, `lapses`, intervalo, dias de atraso, dias desde a última revisão (consulta ao `revlog`, ignorando entradas manuais), últimas três respostas, modo (regular, filtrado, filtrado sem reagendar), agendador em uso (`scheduler`: `fsrs` ou `sm2`), retenção desejada (`desired_retention`, só com FSRS) e, se existirem, estabilidade e dificuldade do FSRS.
 - **Privacidade:** o banco não guarda texto de cartão. Na exportação de CSV, `anonymize_export` troca os IDs e o nome do baralho por hash com sal da instalação.
 - **Falhas:** todo gancho é protegido; um erro vai para `user_files/dfc_errors.log` e nunca interrompe a revisão.
 - **Menu** (Ferramentas > DFC Probe): Registro ativo, Status, Exportar eventos (CSV) e Exportar notas para variantes (JSONL).
@@ -83,6 +83,7 @@ Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em 
 
 ## Limites conhecidos
 
+- **Agendador diferente entre participantes:** o autor usa FSRS e o irmão provavelmente SM-2. O sorteio é dentro de cada revisão, então o agendador não enviesa a comparação original x variante; ele muda a taxa-base de falha e os intervalos, e entra como covariável (`scheduler`, `log(intervalo)`, dias desde a última revisão). Estabilidade e dificuldade do FSRS só existem para quem usa FSRS e ficam para a análise de sensibilidade. Cada pessoa mantém o agendador como já usa; durante a janela, ninguém liga ou desliga o FSRS, muda a retenção desejada nem roda "Otimizar" (isso reescreve datas).
 - O sorteio e a exibição de variantes (v1) ainda não foram executados no Anki real; o registro (v0) foi conferido contra o `revlog` em 20/10 (7 revisões). O teste de fumaça usa um `aqt` simulado e só cobre ligação e lógica, não mudanças de API.
 - Elegibilidade estrutural não decide "conceitual": isso é o sinal `conceptual` do LLM, conferido na auditoria.
 - Notas Cloze com mais de uma lacuna ficam fora (seção 4.2 do protocolo).
