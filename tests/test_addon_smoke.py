@@ -186,7 +186,7 @@ class SmokeTest(unittest.TestCase):
             "draw_enabled": True,
             "draw_start": (today - datetime.timedelta(days=1)).isoformat(),
             "draw_end": (today + datetime.timedelta(days=30)).isoformat(),
-            "bad_shortcut": "b",
+            "bad_shortcut": "x",
         }
         self.hooks = types.SimpleNamespace(
             reviewer_did_show_question=[],
@@ -427,7 +427,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_variants_do_not_repeat_on_the_same_card(self):
         self.force(1.0)
-        shown = [self.study(make_card())[0] for _ in range(2)]
+        shown = [self.study(make_card(reps=reps))[0] for reps in (6, 7)]  # reps avança: respostas válidas, não Ctrl+Z
         self.assertEqual(sorted(shown), ["Variante A?", "Variante B?"])
 
     def test_template_mismatch_falls_back_to_the_original_text(self):
@@ -460,7 +460,7 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(shortcuts, [])
         self.hooks.state_shortcuts_will_change[0]("review", shortcuts)
         ((key, press),) = shortcuts
-        self.assertEqual(key, "b")
+        self.assertEqual(key, "x")
         card = make_card()
         self.hooks.card_will_show[0]("Q", card, "reviewQuestion")
         self.hooks.reviewer_did_show_question[0](card)
@@ -527,6 +527,50 @@ class SmokeTest(unittest.TestCase):
         self.cfg["allow_fake_bank"] = True
         self.assertNotEqual(self.study(make_card(id=9))[0], "Q")
         self.assertEqual([r["draw_note"] for r in self.rows()], ["fake_bank", "ok"])
+
+    def test_conflicting_bad_shortcut_falls_back_to_x_and_warns_once(self):
+        self.cfg["bad_shortcut"] = "b"  # no Anki, b abre o Navegador: a tecla repetida não faria nada
+        for _ in range(2):
+            shortcuts = []
+            self.hooks.state_shortcuts_will_change[0]("review", shortcuts)
+            self.assertEqual([k for k, _f in shortcuts], ["x"])
+        self.assertEqual(sum("'b' já é tecla do Anki" in m for m in self.messages), 1)
+        self.menu_action("Status").triggered.emit(False)
+        self.assertTrue(any("Atalho de variante ruim: x ('b' configurada conflita com o Anki)" in m for m in self.messages))
+        taken = [("x", lambda: None)]  # outro add-on já usa o x
+        self.hooks.state_shortcuts_will_change[0]("review", taken)
+        self.assertEqual(len(taken), 1)
+        self.cfg["bad_shortcut"] = ""
+        free = []
+        self.hooks.state_shortcuts_will_change[0]("review", free)
+        self.assertEqual(free, [])
+
+    def test_after_ctrl_z_the_card_keeps_the_same_arm_and_variant(self):
+        self.force(1.0)
+        first_q, _ = self.study(make_card())
+        self.force(0.0)  # um novo sorteio daria o original
+        again_q, _ = self.study(make_card())  # Ctrl+Z: mesmo cartão, mesmo reps
+        self.assertEqual(first_q, again_q)
+        self.assertNotEqual(again_q, "Q")
+        first, again = self.rows()
+        self.assertEqual((first["arm"], first["draw_note"]), ("variant", "ok"))
+        self.assertEqual((again["arm"], again["draw_note"], again["variant_id"]), ("variant", "undo_redo", first["variant_id"]))
+        self.assertEqual(again["draw_seed"], first["draw_seed"])
+
+    def test_after_ctrl_z_an_original_stays_original(self):
+        self.force(0.0)
+        self.study(make_card())
+        self.force(1.0)
+        self.assertEqual(self.study(make_card())[0], "Q")
+        self.assertEqual([r["arm"] for r in self.rows()], ["original", "original"])
+
+    def test_another_card_in_between_means_a_fresh_draw(self):
+        self.force(1.0)
+        self.study(make_card(id=1))
+        self.study(make_card(id=2))
+        self.force(0.0)
+        self.study(make_card(id=1))  # a última resposta foi a do cartão 2: não herda
+        self.assertEqual([(r["arm"], r["draw_note"]) for r in self.rows()], [("variant", "ok"), ("variant", "ok"), ("original", "ok")])
 
     def test_draw_switch_in_the_menu_writes_the_config(self):
         draw = self.menu_tools.menus[0].actions[1]

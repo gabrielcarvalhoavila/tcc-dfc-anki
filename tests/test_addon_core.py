@@ -101,6 +101,32 @@ class TrackerTest(unittest.TestCase):
         self.assertEqual(self.store.rows()[0]["flag_bad"], 1)
         self.assertEqual(self.store.mark_bad("nao-existe"), 0)
 
+    def test_exposure_inherits_the_decision_only_after_an_undone_answer_of_the_same_card(self):
+        reps = {"v": 7}
+        tracker = core.EventTracker(self.store, lambda c: {**snapshot(c), "reps": reps["v"]}, "26.05", self.clock)
+        a, b = types.SimpleNamespace(id=1), types.SimpleNamespace(id=2)
+        first = tracker.begin_exposure(a)
+        self.assertIsNone(first["inherit"])
+        first["extra"].update(arm="variant", variant_id="v1")
+        tracker.answered(a, 3)
+        again = tracker.begin_exposure(a)  # Ctrl+Z: mesmo cartão e mesmo reps
+        self.assertEqual(again["inherit"]["variant_id"], "v1")
+        tracker.answered(a, 3)
+        reps["v"] = 8  # a resposta valeu: reps avançou
+        self.assertIsNone(tracker.begin_exposure(a)["inherit"])
+        tracker.answered(a, 3)
+        tracker.begin_exposure(b)
+        tracker.answered(b, 3)
+        self.assertIsNone(tracker.begin_exposure(a)["inherit"])  # outra resposta no meio
+
+    def test_same_exposure_is_reused_until_answered(self):
+        a = types.SimpleNamespace(id=1)
+        first = self.tracker.begin_exposure(a)
+        self.assertIs(self.tracker.begin_exposure(a), first)
+        self.tracker.question_shown(a)
+        self.assertIs(self.tracker.pending, first)
+        self.assertIsNot(self.tracker.begin_exposure(types.SimpleNamespace(id=2)), first)
+
 
 class ExportTest(unittest.TestCase):
     def setUp(self):
@@ -125,7 +151,7 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(list(row.keys()), core.COLUMN_NAMES + list(core.EXPORT_EXTRA))
         self.assertEqual(row["note_id"], "50")
         self.assertEqual(row["deck_name"], "Deck")
-        self.assertEqual((row["revlog_match"], row["superseded"]), ("", "0"))  # sem conciliador: desconhecido
+        self.assertEqual((row["revlog_match"], row["superseded"], row["after_undo"]), ("", "0", "0"))  # sem conciliador: desconhecido
 
     def test_anonymize_hashes_ids_with_salt(self):
         salt_path = os.path.join(self.tmp.name, "salt.txt")
@@ -154,8 +180,8 @@ class ExportTest(unittest.TestCase):
         path = os.path.join(self.tmp.name, "o.csv")
         core.export_csv(self.store, path, revlog_match=lambda cid, ease, ts: ease == 1)
         first, second = self.read(path)
-        self.assertEqual((first["ease"], first["superseded"], first["revlog_match"]), ("3", "1", "0"))
-        self.assertEqual((second["ease"], second["superseded"], second["revlog_match"]), ("1", "0", "1"))
+        self.assertEqual((first["ease"], first["superseded"], first["revlog_match"], first["after_undo"]), ("3", "1", "0", "0"))
+        self.assertEqual((second["ease"], second["superseded"], second["revlog_match"], second["after_undo"]), ("1", "0", "1", "1"))
 
     def test_reconciliation_uses_real_ids_even_when_anonymizing(self):
         path = os.path.join(self.tmp.name, "o.csv")
@@ -172,6 +198,12 @@ class ExportTest(unittest.TestCase):
     def test_mark_superseded_ignores_unknown_reps(self):
         rows = [{"card_id": 1, "reps": 4}, {"card_id": 1, "reps": 4}, {"card_id": 1, "reps": 5}, {"card_id": 2, "reps": None}, {"card_id": 2, "reps": None}]
         self.assertEqual(core.mark_superseded(rows), [1, 0, 0, 0, 0])
+        self.assertEqual(core.mark_after_undo(rows), [0, 1, 0, 0, 0])
+
+    def test_after_undo_marks_every_event_after_the_first_of_a_group(self):
+        rows = [{"card_id": 1, "reps": 4}] * 3 + [{"card_id": 1, "reps": 5}]
+        self.assertEqual(core.mark_superseded(rows), [1, 1, 0, 0])
+        self.assertEqual(core.mark_after_undo(rows), [0, 1, 1, 0])  # a válida (3ª) já tinha visto a resposta
 
 
 class MigrationTest(unittest.TestCase):

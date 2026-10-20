@@ -78,6 +78,21 @@ def _window_ok() -> bool:
     return variants.in_window(datetime.date.today(), str(cfg.get("draw_start", "2026-11-02")), str(cfg.get("draw_end", "2026-11-22")))
 
 
+# Teclas globais do Anki (setupKeys, aqt/main.py): valem em todas as telas e, repetidas, anulam o atalho do add-on.
+ANKI_GLOBAL_KEYS = {"d", "s", "a", "b", "t", "y", "shift+t", "ctrl+:"}
+FALLBACK_KEY = "x"
+_warned_key = []
+
+
+def _bad_key(shortcuts=()):
+    """(tecla a usar, tecla configurada que conflita ou None). Conflito: usa `x`; se ele também estiver ocupado, nenhuma."""
+    key = str(_config().get("bad_shortcut", FALLBACK_KEY) or "").strip()
+    taken = ANKI_GLOBAL_KEYS | {item[0].lower() for item in shortcuts if isinstance(item[0], str)}
+    if key and key.lower() in taken:
+        return (FALLBACK_KEY if FALLBACK_KEY not in taken else ""), key
+    return key, None
+
+
 @_safe
 def _on_question(card) -> None:
     if _tracker is not None and _enabled():
@@ -114,6 +129,12 @@ def _prepare_exposure(p: dict, card) -> None:
         salt=core.get_salt(SALT_PATH),
         bank_ok=_bank is None or not _bank.is_fake or bool(_config().get("allow_fake_bank", False)),
     )
+    prior = p.get("inherit")
+    if d.arm is not None and prior and prior.get("arm") is not None:
+        # Ctrl+Z: o cartão volta no mesmo estado (mesmo reps), então é a mesma exposição: mantém braço, variante e semente
+        again = next((v for v in entry["variants"] if v["id"] == prior.get("variant_id")), None)
+        if prior["arm"] == "original" or again is not None:
+            d = variants.Decision(prior["arm"], "undo_redo", again, prior.get("draw_seed"))
     extra.update(arm=d.arm, draw_note=d.reason, draw_seed=d.seed, bank_hash=_bank.hash if _bank is not None else None)
     if d.arm is None:
         return
@@ -184,8 +205,13 @@ def _mark_bad_last() -> None:
 
 @_safe
 def _on_shortcuts(state, shortcuts) -> None:
-    key = str(_config().get("bad_shortcut", "b") or "")
-    if state == "review" and key:
+    if state != "review":
+        return
+    key, conflict = _bad_key(shortcuts)
+    if conflict and conflict not in _warned_key:
+        _warned_key.append(conflict)
+        tooltip(f"DFC Probe: '{conflict}' já é tecla do Anki; variante ruim em '{key}'." if key else f"DFC Probe: '{conflict}' já é tecla do Anki; troque bad_shortcut.")
+    if key:
         shortcuts.append((key, _mark_bad_current))
 
 
@@ -243,6 +269,8 @@ def _status() -> None:
     sched = scheduler_name(mw.col) if mw.col is not None else None
     cfg = _config()
     bank = f"{len(_bank.notes)} notas, {_bank.n_variants} variantes (hash {_bank.hash})" if _bank is not None else "nenhum (importe pelo menu)"
+    key, conflict = _bad_key()
+    key_text = (key or "nenhum") + (f" ('{conflict}' configurada conflita com o Anki)" if conflict else "")
     if _bank is not None and _bank.is_fake:
         bank += " — BANCO DE TESTE, variantes falsas: " + ("permitido por allow_fake_bank" if cfg.get("allow_fake_bank") else "não sorteia")
     showInfo(
@@ -250,7 +278,7 @@ def _status() -> None:
         f"Registro: {'ligado' if _enabled() else 'desligado'}\nAgendador: {sched or 'desconhecido'}\n"
         f"Banco de variantes: {bank}\n"
         f"Sorteio: {'ligado' if _draw_enabled() else 'desligado'} (janela {cfg.get('draw_start')} a {cfg.get('draw_end')}; hoje {'dentro' if _window_ok() else 'fora'})\n"
-        f"Atalho de variante ruim: {cfg.get('bad_shortcut', 'b')}\nErros: {ERR_LOG}"
+        f"Atalho de variante ruim: {key_text}\nErros: {ERR_LOG}"
     )
 
 

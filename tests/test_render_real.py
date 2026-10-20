@@ -266,7 +266,26 @@ class RealHooksTest(unittest.TestCase):
         core.export_csv(self.mod._store, out, revlog_match=make_revlog_matcher(self.mw))
         with open(out, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
-        self.assertEqual([(r["ease"], r["revlog_match"], r["superseded"]) for r in rows], [("3", "0", "1"), ("1", "1", "0")])
+        self.assertEqual([(r["ease"], r["revlog_match"], r["superseded"], r["after_undo"]) for r in rows], [("3", "0", "1", "0"), ("1", "1", "0", "1")])
+
+    def test_undo_keeps_the_same_variant_on_a_real_collection(self):
+        note = self.basic_note()
+        card = self.age(note)
+        entry = {
+            **self.BASIC_ENTRY,
+            "variants": [
+                {"id": "n-1", "type": "paraphrase", "text": "Primeira variante?"},
+                {"id": "n-2", "type": "reorder", "text": "Segunda variante?"},
+            ],
+        }
+        self.load_addon({note: entry})
+        _, first_q, _ = self.study(card)
+        self.mod.variants.VARIANT_PROBABILITY = 0.0  # um novo sorteio daria o original
+        _, again_q, _ = self.study(card)  # Ctrl+Z: mesmo cartão, mesmo reps
+        self.assertEqual(first_q, again_q)
+        self.assertTrue(first_q.endswith(("Primeira variante?", "Segunda variante?")))
+        first, again = self.mod._store.rows()
+        self.assertEqual((again["draw_note"], again["variant_id"], again["draw_seed"]), ("undo_redo", first["variant_id"], first["draw_seed"]))
 
     def test_cloze_variant_on_a_real_cloze_note(self):
         note = self.col.new_note(self.col.models.by_name("Cloze"))

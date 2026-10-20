@@ -16,7 +16,7 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.2.0"
+ADDON_VERSION = "0.2.1"
 SCHEMA_VERSION = 4
 
 # Esquema do protocolo (seção 6.3). arm e variant_* só são preenchidos nas exposições sorteadas.
@@ -69,7 +69,7 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("flag_bad", "INTEGER DEFAULT 0"),
 ]
 COLUMN_NAMES = [name for name, _ in EVENT_COLUMNS]
-EXPORT_EXTRA = ("revlog_match", "superseded")  # derivadas na exportação, não ficam no banco
+EXPORT_EXTRA = ("revlog_match", "superseded", "after_undo")  # derivadas na exportação, não ficam no banco
 ID_COLUMNS = ("note_id", "card_id", "deck_id", "deck_name", "profile")
 
 
@@ -158,6 +158,7 @@ class EventTracker:
         self.session_id = uuid.uuid4().hex
         self.seq = 0
         self.pending: Optional[dict[str, Any]] = None
+        self.last_answered: Optional[dict[str, Any]] = None  # decisão da última resposta, reaproveitada se ela for desfeita
 
     def begin_exposure(self, card: Any) -> dict[str, Any]:
         """Abre (ou reaproveita, se for o mesmo cartão ainda sem resposta) a exposição atual: estado do cartão, id do evento e anotações do sorteio."""
@@ -165,6 +166,8 @@ class EventTracker:
         if p and p["card_id"] == getattr(card, "id", None):
             return p
         snap = self.snapshot_fn(card)
+        la = self.last_answered
+        same_state = la is not None and la["card_id"] == snap.get("card_id") and la["reps"] is not None and la["reps"] == snap.get("reps")
         self.pending = {
             "event_id": uuid.uuid4().hex,
             "card_id": snap.get("card_id"),
@@ -173,6 +176,7 @@ class EventTracker:
             "snap": snap,
             "extra": {},
             "render": None,
+            "inherit": la["extra"] if same_state else None,  # mesmo cartão e mesmo reps: a resposta anterior foi desfeita
         }
         return self.pending
 
@@ -208,6 +212,7 @@ class EventTracker:
             if p["a_shown_at"] is not None:
                 rec["t_reveal_ms"] = int((p["a_shown_at"] - p["q_shown_at"]) * 1000)
         self.store.insert(rec)
+        self.last_answered = {"card_id": rec.get("card_id"), "reps": rec.get("reps"), "extra": dict(p["extra"])} if p else None
         self.pending = None
         return rec
 
@@ -236,6 +241,17 @@ def mark_superseded(rows: list[dict[str, Any]]) -> list[int]:
     return [int(r.get("reps") is not None and last[(r.get("card_id"), r.get("reps"))] != i) for i, r in enumerate(rows)]
 
 
+def mark_after_undo(rows: list[dict[str, Any]]) -> list[int]:
+    """1 para a resposta que refaz uma desfeita: antes dela há outro evento do mesmo cartão com o mesmo `reps` (a pessoa já viu a resposta)."""
+    seen: set[Any] = set()
+    out = []
+    for r in rows:
+        key = (r.get("card_id"), r.get("reps"))
+        out.append(int(r.get("reps") is not None and key in seen))
+        seen.add(key)
+    return out
+
+
 def _revlog_pair(match: Optional[Callable[[int, int, float], bool]], row: dict[str, Any]) -> Optional[int]:
     if match is None or None in (row.get("card_id"), row.get("ease"), row.get("answered_at")):
         return None
@@ -248,14 +264,15 @@ def _revlog_pair(match: Optional[Callable[[int, int, float], bool]], row: dict[s
 def export_csv(store: EventStore, path: str, anonymize: bool = False, salt: bytes = b"", revlog_match: Optional[Callable[[int, int, float], bool]] = None) -> int:
     rows = store.rows()
     superseded = mark_superseded(rows)
+    after_undo = mark_after_undo(rows)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(COLUMN_NAMES + list(EXPORT_EXTRA))
-        for row, sup in zip(rows, superseded):
+        for row, sup, aft in zip(rows, superseded, after_undo):
             pair = _revlog_pair(revlog_match, row)
             if anonymize:
                 row = anonymize_row(row, salt)
-            writer.writerow([row.get(c) for c in COLUMN_NAMES] + [pair, sup])
+            writer.writerow([row.get(c) for c in COLUMN_NAMES] + [pair, sup, aft])
     return len(rows)
 
 
