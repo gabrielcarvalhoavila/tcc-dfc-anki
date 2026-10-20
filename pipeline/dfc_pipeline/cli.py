@@ -8,7 +8,7 @@ import sys
 from collections import Counter
 from typing import Any
 
-from . import audit, pack, source
+from . import ankiconnect, audit, pack, source, survey
 from .cards import Card, parse_note, summarize
 from .generate import generate
 from .llm import FakeLLM, LLMClient
@@ -65,6 +65,14 @@ def cmd_export(a: argparse.Namespace) -> int:
     for deck, d in sorted(s["por_baralho"].items()):
         print(f"{deck[:50]:50} {d['notas']:>6} {d['elegiveis']:>9} {d['elegiveis_suspeitos']:>20}")
     print("motivos de inelegibilidade:", json.dumps(s["motivos"], ensure_ascii=False))
+    return 0
+
+
+def cmd_survey(a: argparse.Namespace) -> int:
+    cards, lines = survey.run(a.query, ankiconnect.invoke, a.days, a.rollover)
+    if a.out:
+        write_jsonl(a.out, (c.to_dict() for c in cards))
+    print("\n".join(lines))
     return 0
 
 
@@ -156,6 +164,13 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--in-file", help="JSONL exportado pelo add-on (para outra pessoa)")
     e.add_argument("--out", default="data/cards.jsonl")
     e.set_defaults(func=cmd_export)
+
+    sv = sub.add_parser("survey", help="viabilidade de uma colecao: tipos de nota, elegiveis e eventos que ela geraria (so agregados)")
+    sv.add_argument("--query", default="deck:*", help="busca do Anki (padrao: todos os baralhos)")
+    sv.add_argument("--days", type=int, default=28, help="periodo observado no historico de revisoes")
+    sv.add_argument("--rollover", type=int, default=4, help="hora em que o dia vira no Anki")
+    sv.add_argument("--out", help="grava tambem as notas lidas (JSONL, como o export)")
+    sv.set_defaults(func=cmd_survey)
 
     g = sub.add_parser("generate", help="gera variantes com o LLM (DFC_GEN_MODEL)")
     g.add_argument("--cards", default="data/cards.jsonl")

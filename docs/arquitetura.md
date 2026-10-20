@@ -26,7 +26,7 @@ O add-on cobre `A -> H -> I -> J`: registra as revisões e, na janela do estudo,
 |---|---|---|
 | `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0.2.2 (registro, sorteio e exibição). Registro conferido no Anki 26.05 real contra o revlog (12 revisões, 0 divergências); sorteio e exibição testados com o motor real do Anki 26.5 (pacote `anki`, sem interface) e, em 20/10, no Anki real (variante nos dois lados, nota intacta, tecla `x`, mesma variante após Ctrl+Z); o teste de fumaça achou três defeitos (tecla `b`, novo sorteio e marca de variante ruim perdida após Ctrl+Z), corrigidos nas versões 0.2.1 e 0.2.2 |
 | `pipeline/dfc_pipeline/` | Exportar, gerar, validar, auditar e empacotar variantes | Testado com LLM falso e servidor HTTP local; falta chave e modelo reais |
-| `tests/` | 98 testes (`scripts/run_tests.ps1`; 11 deles só rodam com o pacote `anki`: `-Real`) | Passando |
+| `tests/` | 105 testes (`scripts/run_tests.ps1`; 11 deles só rodam com o pacote `anki`: `-Real`) | Passando |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção (`render_check.py`) | |
 | `data/` (ignorado pelo Git) | `cards.jsonl`, `generation.jsonl`, `validation.jsonl`, auditoria e banco | Contém texto de cartões: não versionar |
 
@@ -63,6 +63,7 @@ Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em 
 | `audit-sheet --n 100` / `audit-score` | Planilha estratificada por tipo para o autor marcar `s`/`n`; calcula a taxa de válidas (H1) com IC de Wilson e os tipos abaixo de 70% |
 | `pack` | Banco `variant_bank.json` só com variantes aprovadas e cujo cartão não foi editado depois da geração |
 | `stats` | Resumo, incluindo tokens usados |
+| `survey [--query "deck:*"] [--days 28] [--out notas.jsonl]` | Viabilidade de uma coleção aberta no Anki (AnkiConnect): tipos de nota, elegíveis, ativas (não suspensas), suspeitas pelo histórico e quantos eventos (revisão cuja anterior foi em outro dia do Anki) e eventos de suspeitos ela teve nos últimos N dias, com a projeção para a janela de 21 dias. Só agregados, sem texto de cartão. Serve para avaliar um participante antes de incluí-lo; no autor (20/10), 22 eventos em 22 cartões, o mesmo que o add-on registrou |
 
 `--dry-run` usa um LLM falso para testar o fluxo; o `pack` recusa saídas do modelo `fake` sem `--allow-fake`. Cada registro de geração e de validação traz modelo, versão do prompt (`gen-v1`, `judge-v1`), temperatura e data.
 

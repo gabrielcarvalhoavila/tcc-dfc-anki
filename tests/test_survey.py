@@ -1,0 +1,134 @@
+"""Testes do levantamento de viabilidade (AnkiConnect simulado, sem Anki)."""
+import contextlib
+import datetime
+import io
+import json
+import os
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+sys.path.insert(0, os.path.join(ROOT, "pipeline"))
+
+from dfc_pipeline import ankiconnect, cards, cli, survey  # noqa: E402
+
+
+def at(day, hour=12):
+    """Horário local em ms (o `id` do revlog), `day` dias depois de 1/10/2026."""
+    return int(datetime.datetime(2026, 10, 1 + day, hour).timestamp() * 1000)
+
+
+def answer(day, ease=3, type=1, hour=12):
+    return {"id": at(day, hour), "ease": ease, "type": type}
+
+
+def history(days, eases=None):
+    """Uma resposta por dia (a primeira em aprendizado, as outras em revisão)."""
+    return [answer(d, (eases or {}).get(d, 3), 0 if d == days[0] else 1) for d in days]
+
+
+class ClassifyTest(unittest.TestCase):
+    def flags(self, entries, reps, lapses=0, key="event"):
+        return [r[key] for r in survey.classify(entries, reps, lapses)]
+
+    def test_event_needs_the_previous_answer_on_another_anki_day(self):
+        entries = [answer(0, type=0), answer(0, type=0, hour=13), answer(1, type=1, hour=2), answer(2), answer(3)]
+        # 2/10 às 2h ainda é o dia do Anki de 1/10 (a virada é às 4h)
+        self.assertEqual(self.flags(entries, reps=5), [False, False, False, True, True])
+        self.assertFalse(any(self.flags(entries, reps=5, key="suspect")))
+
+    def test_suspect_stratum_follows_the_protocol(self):
+        eight = history(range(8))
+        self.assertEqual(self.flags(eight, reps=8, key="suspect"), [False] * 5 + [True] * 3)
+        lapse = [*eight[:6], answer(6, ease=1), answer(7)]
+        self.assertEqual(self.flags(lapse, reps=8, lapses=1, key="suspect"), [False] * 5 + [True, True, False])  # a falha também é exposição de suspeito
+        hard = history(range(8), eases={5: 2})
+        self.assertEqual(self.flags(hard, reps=8, key="suspect")[5:], [True, False, True])  # a anterior precisa ser Good ou mais
+
+    def test_manual_entries_are_ignored(self):
+        entries = [*history(range(8)), {"id": at(3, 18), "ease": 0, "type": 4}]
+        self.assertEqual(self.flags(entries, reps=8, key="suspect"), [False] * 5 + [True] * 3)
+
+    def test_missing_old_history_does_not_invent_events(self):
+        entries = [answer(8), answer(9)]  # o cartão tem 10 respostas, mas o revlog só tem as duas últimas
+        self.assertEqual(self.flags(entries, reps=10), [False, True])
+        self.assertEqual(self.flags(entries, reps=10, key="suspect"), [False, True])
+
+
+def ac_note(note_id, card_id, front, back, model="Basic"):
+    return {
+        "noteId": note_id,
+        "modelName": model,
+        "tags": [],
+        "fields": {"Front": {"value": front, "order": 0}, "Back": {"value": back, "order": 1}},
+        "cards": [card_id],
+    }
+
+
+NOTES = {
+    1: (ac_note(1, 101, "O que é NAT na prática?", "Tradução de endereços de rede."), "Redes", {"reps": 8, "lapses": 0, "queue": 2}, history(range(8))),
+    2: (
+        {"noteId": 2, "modelName": "Omissão de Palavras", "tags": [], "cards": [102],
+         "fields": {"Texto": {"value": "O {{c1::TCP}} é confiável", "order": 0}, "Extra": {"value": "", "order": 1}}},
+        "Redes::Camada 4", {"reps": 3, "lapses": 0, "queue": 2}, history([5, 6, 7]),
+    ),
+    3: (ac_note(3, 103, "Figura <img src='x.png'>", "resposta longa qualquer"), "Redes", {"reps": 9, "lapses": 0, "queue": 2}, history(range(9))),
+    4: (ac_note(4, 104, "Qual a função do DNS?", "Converter nomes em endereços IP."), "Outro", {"reps": 6, "lapses": 0, "queue": -1}, []),
+}
+
+
+def fake_invoke(action, **params):
+    if action == "findNotes":
+        return list(NOTES)
+    if action == "notesInfo":
+        return [NOTES[i][0] for i in params["notes"]]
+    if action == "cardsInfo":
+        by_card = {n[0]["cards"][0]: n for n in NOTES.values()}
+        return [{"cardId": c, "deckName": by_card[c][1], "interval": 10, **by_card[c][2]} for c in params["cards"]]
+    if action == "getReviewsOfCards":
+        assert all(isinstance(c, int) for c in params["cards"])  # o AnkiConnect só aceita ids inteiros
+        by_card = {n[0]["cards"][0]: n for n in NOTES.values()}
+        return {str(c): by_card[c][3] for c in params["cards"]}
+    raise AssertionError(action)
+
+
+class SurveyTest(unittest.TestCase):
+    now = at(10) / 1000
+
+    def test_window_counts_only_eligible_notes_and_recent_answers(self):
+        parsed, reviews = survey.collect("deck:*", fake_invoke, log=lambda s: None)
+        self.assertEqual(sorted(reviews), [101, 102, 104])  # a nota com imagem nem é consultada
+        counts = survey.window_counts(parsed, reviews, since_ms=at(5))
+        self.assertEqual(dict(counts[("Redes", "basic")]), {"respostas": 3, "eventos": 3, "suspeitos": 3, "cartoes": 1})
+        self.assertEqual(dict(counts[("Redes", "cloze")]), {"respostas": 3, "eventos": 2, "suspeitos": 0, "cartoes": 1})
+        self.assertEqual(dict(counts[("Outro", "basic")]), {"respostas": 0, "eventos": 0, "suspeitos": 0, "cartoes": 0})
+
+    def test_report_has_note_types_decks_and_projection(self):
+        _, lines = survey.run("deck:*", fake_invoke, days=28, rollover_hour=4, now=self.now, log=lambda s: None)
+        text = "\n".join(lines)
+        self.assertIn("notas: 4  elegiveis: 3", text)
+        self.assertRegex(text, r"Omissão de Palavras\s+cloze\s+1\s+1")
+        self.assertIn("media_or_latex 1", text)
+        self.assertRegex(text, r"Outro\s+1\s+1\s+0\s+0")  # elegível, mas suspensa: não conta como ativa
+        self.assertRegex(text, r"Redes\s+3\s+2\s+2\s+1")  # 3 notas (uma com imagem), 2 elegíveis, 2 ativas, 1 suspeita
+        self.assertIn("total: 9 eventos (3 suspeitos, 6 controles) em 2 cartoes", text)
+        self.assertIn("~7 eventos (~2 suspeitos)", text)  # 21/28 de 9 e de 3
+
+    def test_cli_prints_only_aggregates_and_can_save_the_notes(self):
+        out = os.path.join(tempfile.mkdtemp(), "notas.jsonl")
+        buf = io.StringIO()
+        with mock.patch.object(ankiconnect, "invoke", fake_invoke), mock.patch("dfc_pipeline.survey.time.time", return_value=self.now), contextlib.redirect_stdout(buf):
+            self.assertEqual(cli.main(["survey", "--out", out]), 0)
+        printed = buf.getvalue()
+        self.assertIn("total: 9 eventos", printed)
+        self.assertNotIn("Tradução de endereços", printed)  # nenhum texto de cartão
+        with open(out, encoding="utf-8") as f:
+            saved = [json.loads(line) for line in f]
+        self.assertEqual([d["note_id"] for d in saved], [1, 2, 3, 4])
+        self.assertEqual(cards.Card.from_dict(saved[0]).decks, ["Redes"])
+
+
+if __name__ == "__main__":
+    unittest.main()
