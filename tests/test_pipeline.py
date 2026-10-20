@@ -74,8 +74,9 @@ class LLMTest(unittest.TestCase):
     def serve(self, handler):
         server = http.server.HTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.shutdown)
+        # addCleanup roda na ordem inversa: o shutdown precisa vir antes de fechar o soquete.
         self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
         return f"http://127.0.0.1:{server.server_port}/v1"
 
     def test_retry_on_429_then_success_and_auth_header(self):
