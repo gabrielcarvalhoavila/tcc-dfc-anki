@@ -43,7 +43,7 @@ Os limiares numéricos estão no [protocolo](protocolo.md), seção 8, e foram f
 
 ## Metodologia
 
-**Design Science Research** ([Hevner et al. 2004](https://doi.org/10.2307/25148625); [Peffers et al. 2007](https://doi.org/10.2753/mis0742-1222240302)): problema, objetivos, projeto e desenvolvimento, demonstração, avaliação, comunicação. A avaliação de E2 segue o desenho **microrandomizado** ([Klasnja et al. 2015](https://doi.org/10.1037/hea0000305); [Qian et al. 2022](https://doi.org/10.1037/met0000283)): a cada revisão elegível, o add-on sorteia original ou variante e registra o que foi mostrado.
+**Design Science Research** ([Hevner et al. 2004](https://doi.org/10.2307/25148625); [Peffers et al. 2007](https://doi.org/10.2753/mis0742-1222240302)): problema, objetivos, projeto e desenvolvimento, demonstração, avaliação, comunicação. A avaliação de E2 segue o desenho **microrandomizado** ([Klasnja et al. 2015](https://doi.org/10.1037/hea0000305); [Qian et al. 2022](https://doi.org/10.1037/met0000283)): a cada revisão elegível de outro dia do Anki, o add-on sorteia original ou variante e registra o que foi mostrado.
 
 ## Delimitações
 

@@ -1,8 +1,15 @@
 # Protocolo e plano: dependência da forma do cartão (DFC)
 
-**Versão 1, 2026-10-20. Congelado** com a tag Git `protocolo-v1`. Mudanças até o primeiro sorteio (2/11) refazem a tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
+**Versão 1.1, 2026-10-20. Congelado** com a tag Git `protocolo-v1.1` (a `protocolo-v1` fica como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (2/11) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
 
 **Como ler.** **(premissa)** = número meu, de calibração, não verificado em dados do estudo. † = vem da minha memória, não verifiquei. As datas da seção 11 são limites derivados da entrega (4/12) e da apresentação (18/12), não estimativas de esforço.
+
+**Histórico de versões.**
+
+| Versão | Data | Mudanças |
+|---|---|---|
+| v1 | 20/10/2026 | Versão inicial (tag `protocolo-v1`, commit `e4d5eff`) |
+| v1.1 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. (1) O sorteio só ocorre se a última revisão do cartão foi em outro dia do Anki (seções 5, 6.3 e 6.3.1). (2) Esclarece que `reps` conta respostas em passos de aprendizado; o add-on registra `n_reviews` e a análise ganha uma sensibilidade com `n_reviews ≥ 5` (seções 5 e 7). (3) Resposta desfeita (sem par no histórico de revisões do Anki, ou substituída por outra do mesmo cartão e do mesmo `reps`) é erro do add-on (seções 5, 6.3 e 8). Hipóteses, desfecho e limiares não mudam. |
 
 ---
 
@@ -11,7 +18,7 @@
 | Item | Definição |
 |---|---|
 | Pergunta | Cartões que o usuário acerta de modo consistente ("suspeitos") perdem mais acerto, quando o enunciado muda, do que os demais ("controles")? |
-| Desenho | Experimento microrandomizado dentro do usuário ([Klasnja et al. 2015](https://doi.org/10.1037/hea0000305); [Qian et al. 2022](https://doi.org/10.1037/met0000283)): a cada revisão elegível, o add-on sorteia original ou variante (50/50) e registra o que foi mostrado |
+| Desenho | Experimento microrandomizado dentro do usuário ([Klasnja et al. 2015](https://doi.org/10.1037/hea0000305); [Qian et al. 2022](https://doi.org/10.1037/met0000283)): a cada revisão elegível de outro dia do Anki, o add-on sorteia original ou variante (50/50) e registra o que foi mostrado |
 | Desfecho primário | Falha = botão "Again" |
 | Medida primária | Diferença de diferenças (DiD), em pontos percentuais: [falha(variante) − falha(original)] nos suspeitos, menos o mesmo nos controles |
 | Confirmatórias | H1 (variantes válidas) e H2 (penalidade maior em suspeitos) |
@@ -70,13 +77,16 @@ Descongelar um subconjunto de cartões de texto elegíveis em ritmo fixo de 25 p
 | Termo | Definição |
 |---|---|
 | Janela | Revisões de 2/11 a 22/11/2026 (inclusive). Antes de 2/11 o add-on só registra; o sorteio é ligado em 2/11 |
-| Evento | Uma revisão, no desktop com o add-on, de cartão elegível, com sorteio registrado e resposta registrada, dentro da janela |
+| Evento | Uma revisão, no desktop com o add-on, de cartão elegível cuja revisão anterior foi em outro dia do Anki, com sorteio registrado e resposta registrada, dentro da janela |
+| Exposição do mesmo dia | Revisão no mesmo dia do Anki da revisão anterior do cartão (passos de aprendizado do primeiro dia, cartão que reaparece depois de um Again). Mostra o original, é registrada com `same_day = 1`, não é sorteada e não é evento |
 | Falha | Resposta "Again"; "Hard", "Good" e "Easy" contam como sucesso |
 | Suspeito | Elegível com `reps ≥ 5`, `lapses = 0` e última resposta ≥ "Good" |
 | Controle | Elegível que não é suspeito |
 | Variante válida | Resposta esperada preservada, sem ambiguidade, sem vazamento da resposta, redação distinta (validação da seção 6.2) |
-| Evento válido | Evento cuja variante não foi marcada "variante ruim" e sem erro do add-on |
+| Evento válido | Evento cuja variante não foi marcada "variante ruim" e sem erro do add-on (inclui resposta desfeita: sem par no histórico de revisões do Anki, ou substituída por outra do mesmo cartão e do mesmo `reps`) |
 | Variante nova | A mesma variante não se repete no mesmo cartão enquanto houver outra disponível |
+
+**Esclarecimentos (v1.1).** "Dia do Anki" segue a virada de dia configurada no próprio Anki. `reps` é o contador do Anki e inclui respostas em passos de aprendizado, então `reps ≥ 5` equivale, em geral, a 3 ou 4 revisões em estado de revisão: nas notas do autor (consulta de 20/10), 193 dos 276 suspeitos por esta definição têm 3 ou 4 dessas revisões e 83 têm 5 ou mais (todos da Faculdade). A definição de suspeito não muda, para não perder poder; o add-on registra `n_reviews` (entradas do tipo revisão no histórico do Anki, `type = 1`) para a sensibilidade da seção 7.
 
 ---
 
@@ -106,11 +116,11 @@ LLM via OpenRouter, **modelo pago e fixo**; registrar modelo, versão, prompt, p
 
 ### 6.3 Sorteio e registro (add-on)
 
-A cada revisão elegível: sorteio 50/50 com semente por evento; exibição nos dois lados do cartão; registro de `event_id`, `note_id`, `card_id`, braço, `variant_id`, tipo, hash do texto exibido, horário, versões do add-on e do Anki, tempo até revelar, resposta e tempo total, além do estado do cartão antes da resposta (`reps`, `lapses`, intervalo, dias desde a última revisão, últimas respostas). Botão "variante ruim" e opção de desligar.
+A cada revisão elegível de outro dia do Anki: sorteio 50/50 com semente por evento; exibição nos dois lados do cartão; registro de `event_id`, `note_id`, `card_id`, braço, `variant_id`, tipo, hash do texto exibido, horário, versões do add-on e do Anki, tempo até revelar, resposta e tempo total, além do estado do cartão antes da resposta (`reps`, `lapses`, intervalo, dias desde a última revisão, `same_day`, `n_reviews`, últimas respostas, agendador e retenção desejada). Nas exposições do mesmo dia o original aparece sem sorteio e o evento é registrado com `same_day = 1`. Botão "variante ruim" e opção de desligar. Na exportação, o add-on concilia cada evento com o histórico de revisões do Anki (`revlog_match`) e marca os substituídos (`superseded`), o que detecta respostas desfeitas (Ctrl+Z).
 
 #### 6.3.1 Seleção de cartões: três camadas
 
-1. **Elegibilidade** (4.2): decide se o cartão pode receber variante. Todo cartão elegível, suspeito ou controle, é sorteado em **toda** revisão (50/50); os não elegíveis não são alterados nem analisados.
+1. **Elegibilidade** (4.2): decide se o cartão pode receber variante. Todo cartão elegível, suspeito ou controle, é sorteado em **toda** revisão de outro dia do Anki (50/50); nas exposições do mesmo dia o original aparece sem sorteio; os não elegíveis não são alterados nem analisados.
 2. **Estrato** (seção 5): suspeito ou controle, só pelo histórico (`reps`, `lapses`, última resposta). É o que entra na análise primária. O tempo até revelar não existe nas revisões antigas, por isso não define o estrato.
 3. **Escore de candidato** (E3, exploratório): combina sequência de acertos, tempo até revelar relativo ao tamanho do enunciado (comparado com a distribuição da própria pessoa), prefixo mínimo identificador (PMI) e formato (Básico ou Cloze). É registrado desde o primeiro dia, mas **não** altera quem é sorteado (evita circularidade); depois se testa se prevê a falha da variante (AUC por validação cruzada, contra o baseline "só `reps`").
 
@@ -136,7 +146,7 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 
 - **Primária (H2):** regressão logística com agrupamento: `falha ~ variante × suspeito + log(intervalo) + log(dias desde a última revisão) + tipo_de_variante`, com efeito aleatório (ou erro-padrão robusto) por cartão e por usuário. A estimativa reportada é a **DiD em pontos percentuais** (efeitos marginais), com IC 95%.
 - **Secundárias:** dose-resposta (efeito da variante × `reps`); por tipo de variante; E3 (AUC de um escore de candidato prevendo a falha da variante); custo (minutos e lapsos extras).
-- **Sensibilidade:** incluir eventos "variante ruim"; excluir a primeira revisão após a reativação; definição alternativa de suspeito (`reps ≥ 4`); apenas eventos sem filtro de modo sonda; razão de chances na escala logit; subamostra digitada (se existir).
+- **Sensibilidade:** incluir eventos "variante ruim"; excluir a primeira revisão após a reativação; definição alternativa de suspeito (`reps ≥ 4`; e `n_reviews ≥ 5`); apenas eventos sem filtro de modo sonda; razão de chances na escala logit; subamostra digitada (se existir).
 - **Multiplicidade:** um único desfecho primário; o restante é rotulado como exploratório.
 - **Execução:** script em Python (statsmodels) versionado, testado antes com dados do registro e rodado uma vez após o fim da coleta.
 
@@ -153,7 +163,7 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 | 5 | Alvo e parada | ≈ 1000 eventos válidos (≈ 250 por célula) ou 22/11 (D1), o que vier primeiro; sem olhar o desfecho antes | Com ≈ 250 por célula vê-se DiD ≥ ≈ 10 pp (premissa, sem agrupamento; o poder real é menor) |
 | 6 | Decisão em H2 | Seção 8.1 | |
 | 7 | Custo (H5) | Falha nas variantes dos controles ≤ 5 pp acima do original; "variante ruim" ≤ 15% das exibidas | Descritivo, sem decisão confirmatória |
-| 8 | Exclusões | Variante "ruim"; evento no celular; erro do add-on; versão do Anki diferente da 26.05; evento fora da janela | |
+| 8 | Exclusões | Variante "ruim"; evento no celular; erro do add-on (inclui resposta desfeita: sem par no histórico de revisões do Anki, ou substituída por outra do mesmo cartão e do mesmo `reps`); versão do Anki diferente da 26.05; evento fora da janela; exposição do mesmo dia (não sorteada) | |
 
 *Premissas do cálculo de poder (α = 0,05, poder 80%, sem agrupamento):* penalidade moderada, suspeitos 98% → 83% e controles 90% → 87% (DiD de 12 pp), ≈ 200 revisões por célula; penalidade grande, suspeitos 98% → 73% e controles 90% → 87% (22 pp), ≈ 70 por célula; DiD de 10 pp com suspeitos 98% → 88% e controles inalterados, ≈ 240 por célula.
 
@@ -225,7 +235,7 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 
 ## 13. Registro e desvios
 
-Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
+Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
 
 ---
 
@@ -233,4 +243,5 @@ Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protoc
 
 - **20/10:** entrega em 4/12 e apresentação em 18/12; E4 (rotação) fora; TCLE não exigido pelo professor.
 - **Ao liberar a implementação (20/10):** suspeito `reps ≥ 5` (sensibilidade `≥ 4`); limiar de 10 pp; reativação de 25 por dia a partir de 2/11; agendamento normal do Anki; resposta digitada fora do v1; análise em Python.
+- **Antes do primeiro sorteio (20/10, v1.1):** sorteio só em exposições de outro dia do Anki; `reps ≥ 5` mantido, com `n_reviews` registrado e sensibilidade `n_reviews ≥ 5`; resposta desfeita conta como erro do add-on.
 - **Pendências fora do protocolo:** conta e créditos no OpenRouter (até 23/10) e resposta do irmão (até 22/10).

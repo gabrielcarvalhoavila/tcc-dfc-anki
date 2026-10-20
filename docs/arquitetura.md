@@ -24,9 +24,9 @@ O add-on v0 (esta versão) cobre só `A -> I -> J`: registra as revisões e o te
 
 | Pasta | O que é | Estado (20/10) |
 |---|---|---|
-| `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0.1.1 (só registro): conferido no Anki 26.05 real contra o revlog (7 revisões, 0 divergências) |
+| `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0.1.3 (só registro): conferido no Anki 26.05 real contra o revlog (12 revisões, 0 divergências; a resposta desfeita fica sem par) |
 | `pipeline/dfc_pipeline/` | Exportar, gerar, validar, auditar e empacotar variantes | Testado com LLM falso e servidor HTTP local; falta chave e modelo reais |
-| `tests/` | 29 testes (`scripts/run_tests.ps1`) | Passando |
+| `tests/` | 42 testes (`scripts/run_tests.ps1`) | Passando |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes | |
 | `data/` (ignorado pelo Git) | `cards.jsonl`, `generation.jsonl`, `validation.jsonl`, auditoria e banco | Contém texto de cartões: não versionar |
 
@@ -34,8 +34,9 @@ O add-on v0 (esta versão) cobre só `A -> I -> J`: registra as revisões e o te
 
 - **Ganchos do Anki** ([`genhooks_gui.py`](https://github.com/ankitects/anki/blob/main/qt/tools/genhooks_gui.py)): `reviewer_did_show_question` (guarda o estado do cartão antes da resposta), `reviewer_did_show_answer` (tempo até revelar) e `reviewer_did_answer_card` (grava o evento). No v1: `card_will_show` para trocar o texto, nos dois lados do cartão.
 - **Só desktop:** add-ons não rodam no AnkiDroid nem no iOS; revisões no celular não geram eventos.
-- **Estado antes da resposta:** `reps`, `lapses`, intervalo, dias de atraso, dias desde a última revisão (consulta ao `revlog`, ignorando entradas manuais), últimas três respostas, modo (regular, filtrado, filtrado sem reagendar), agendador em uso (`scheduler`: `fsrs` ou `sm2`), retenção desejada (`desired_retention`, só com FSRS) e, se existirem, estabilidade e dificuldade do FSRS.
-- **Privacidade:** o banco não guarda texto de cartão. Na exportação de CSV, `anonymize_export` troca os IDs e o nome do baralho por hash com sal da instalação.
+- **Estado antes da resposta:** `reps`, `lapses`, intervalo, dias de atraso, dias desde a última revisão (consulta ao `revlog`, ignorando entradas manuais), `same_day` (a última revisão foi no mesmo dia do Anki, pela virada de dia do próprio Anki), `n_reviews` (entradas do tipo revisão no `revlog`; o `reps` do Anki inclui passos de aprendizado), últimas três respostas, modo (regular, filtrado, filtrado sem reagendar), agendador em uso (`scheduler`: `fsrs` ou `sm2`), retenção desejada (`desired_retention`, só com FSRS) e, se existirem, estabilidade e dificuldade do FSRS.
+- **Privacidade:** o banco não guarda texto de cartão. Na exportação de CSV, `anonymize_export` troca os IDs, o nome do baralho e o do perfil por hash com sal da instalação.
+- **Respostas desfeitas (Ctrl+Z):** o evento continua no banco, mas a exportação o marca: `revlog_match` (o histórico de revisões do Anki tem a resposta?) e `superseded` (o mesmo cartão e o mesmo `reps` reaparecem depois, porque o Anki só avança `reps` com resposta válida). Ambas as colunas são derivadas na exportação, não ficam no banco.
 - **Falhas:** todo gancho é protegido; um erro vai para `user_files/dfc_errors.log` e nunca interrompe a revisão.
 - **Menu** (Ferramentas > DFC Probe): Registro ativo, Status, Exportar eventos (CSV) e Exportar notas para variantes (JSONL).
 
@@ -58,7 +59,7 @@ Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em 
 
 ## Esquemas
 
-**Evento** (tabela `events` do SQLite, uma linha por revisão; colunas em `addon/dfc_probe/core.py`): identificação (`event_id`, `session_id`, `seq`, versões), horários (`q_shown_at`, `a_shown_at`, `answered_at`), cartão (`note_id`, `card_id`, `card_ord`, `deck_id`, `model_name`), estado antes da resposta, desfecho (`ease`, `t_reveal_ms`, `t_total_ms`) e experimento (`arm`, `variant_id`, `variant_type`, `flag_bad`; vazios até o v1).
+**Evento** (tabela `events` do SQLite, uma linha por revisão; colunas em `addon/dfc_probe/core.py`): identificação (`event_id`, `session_id`, `seq`, versões, `profile`), horários (`q_shown_at`, `a_shown_at`, `answered_at`), cartão (`note_id`, `card_id`, `card_ord`, `deck_id`, `model_name`), estado antes da resposta, desfecho (`ease`, `t_reveal_ms`, `t_total_ms`) e experimento (`arm`, `variant_id`, `variant_type`, `flag_bad`; vazios até o v1). O CSV exportado acrescenta `revlog_match` e `superseded`. Ainda faltam, para o v1: hash do texto exibido, versão do banco de variantes e semente do sorteio.
 
 **Banco de variantes** (`variant_bank.json`):
 
@@ -84,7 +85,7 @@ Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em 
 ## Limites conhecidos
 
 - **Agendador diferente entre participantes:** o autor usa FSRS e o irmão provavelmente SM-2. O sorteio é dentro de cada revisão, então o agendador não enviesa a comparação original x variante; ele muda a taxa-base de falha e os intervalos, e entra como covariável (`scheduler`, `log(intervalo)`, dias desde a última revisão). Estabilidade e dificuldade do FSRS só existem para quem usa FSRS e ficam para a análise de sensibilidade. Cada pessoa mantém o agendador como já usa; durante a janela, ninguém liga ou desliga o FSRS, muda a retenção desejada nem roda "Otimizar" (isso reescreve datas).
-- O sorteio e a exibição de variantes (v1) ainda não foram executados no Anki real; o registro (v0) foi conferido contra o `revlog` em 20/10 (7 revisões). O teste de fumaça usa um `aqt` simulado e só cobre ligação e lógica, não mudanças de API.
+- O sorteio e a exibição de variantes (v1) ainda não foram executados no Anki real; o registro (v0) foi conferido contra o `revlog` em 20/10 (12 revisões, 0 divergências; o teste de Ctrl+Z confirmou que a resposta desfeita não tem par no `revlog`). O teste de fumaça usa um `aqt` simulado e só cobre ligação e lógica, não mudanças de API.
 - Elegibilidade estrutural não decide "conceitual": isso é o sinal `conceptual` do LLM, conferido na auditoria.
 - Notas Cloze com mais de uma lacuna ficam fora (seção 4.2 do protocolo).
 - O código do Anki é AGPL-3; o add-on usa a API dele, e as implicações de licença † precisam ser conferidas antes de publicar o código.
