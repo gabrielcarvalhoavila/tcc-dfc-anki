@@ -53,6 +53,17 @@ def make_revlog_matcher(mw: Any) -> Callable[[int, int, float], bool]:
     return match
 
 
+def render_pair(col: Any, card: Any, field_index: Optional[int] = None, value: Optional[str] = None) -> tuple[str, str]:
+    """Pergunta e resposta como o Anki as renderiza; com `value`, troca esse campo numa cópia da nota (nada é gravado)."""
+    from anki.template import TemplateRenderContext
+
+    note = col.get_note(card.nid)
+    if field_index is not None:
+        note.fields[field_index] = value
+    out = TemplateRenderContext.from_card_layout(note, card, note.note_type(), card.template(), False).render()
+    return out.question_text, out.answer_text
+
+
 def _model_name(card: Any) -> Any:
     note = _safe(lambda: card.note())
     nt = _safe(lambda: note.note_type()) if note is not None else None

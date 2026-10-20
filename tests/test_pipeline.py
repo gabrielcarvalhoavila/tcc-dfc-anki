@@ -51,6 +51,15 @@ class CardsTest(unittest.TestCase):
         many = {"noteId": 3, "modelName": "Cloze", "fields": {"Text": "{{c1::a}} e {{c1::b}}"}}
         self.assertIn("multi_cloze", cards.parse_note(many).reasons)
 
+    def test_question_field_index_is_recorded(self):
+        second = {"noteId": 4, "modelName": "Cloze", "fields": {"Extra": {"value": "", "order": 0}, "Text": {"value": "O {{c2::TCP}} é confiável", "order": 1}}}
+        c = cards.parse_note(second)
+        self.assertEqual((c.q_field, c.ords), (1, [1]))
+        self.assertEqual(cards.parse_note(ac_note(1, "O que é NAT?", "Tradução de endereços de rede.")).q_field, 0)
+        old = cards.parse_note(ac_note(1, "O que é NAT?", "Tradução de endereços de rede.")).to_dict()
+        del old["q_field"]  # cards.jsonl gerado antes do campo existir
+        self.assertEqual(cards.Card.from_dict(old).q_field, 0)
+
     def test_same_hash_for_both_export_shapes(self):
         a = cards.parse_note(ac_note(1, "Q?", "A longa"))
         b = cards.parse_note({"note_id": 1, "model": "Basic", "fields": {"Front": "Q?", "Back": "A longa"}})
@@ -213,6 +222,7 @@ class PipelineEndToEndTest(unittest.TestCase):
         total = sum(len(e["variants"]) for e in bank["notes"].values())
         self.assertEqual(total, 12 - 1)  # a variante rejeitada na auditoria sai
         self.assertEqual(bank["notes"]["1"]["kind"], "basic")
+        self.assertEqual((bank["schema"], bank["notes"]["1"]["q_field"]), (2, 0))
 
     def test_pack_skips_edited_notes(self):
         generate.generate(self.cards, FakeLLM(), self.p("gen.jsonl"), log=lambda s: None)

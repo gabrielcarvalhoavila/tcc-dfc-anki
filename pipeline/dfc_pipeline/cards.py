@@ -56,6 +56,7 @@ class Card:
     decks: list[str] = field(default_factory=list)
     stats: dict[str, Any] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
+    q_field: int = 0  # índice do campo que contém a pergunta (em Cloze, o da lacuna)
 
     @property
     def eligible(self) -> bool:
@@ -85,12 +86,14 @@ def parse_note(rec: dict[str, Any]) -> Card:
 
     hits = [(i, m) for i, (_, v) in enumerate(fields) for m in CLOZE_RE.finditer(v)]
     kind, ords = "unknown", [0]
+    q_field = 0
     q_html = a_html = ""
     if hits:
         kind = "cloze"
         if len(hits) != 1:
             reasons.append("multi_cloze")
         i, m = hits[0]
+        q_field = i
         text = fields[i][1]
         q_html = text[: m.start()] + PLACEHOLDER + text[m.end():]
         a_html = m.group(2)
@@ -125,6 +128,7 @@ def parse_note(rec: dict[str, Any]) -> Card:
         decks=list(rec.get("decks") or []),
         stats=dict(rec.get("stats") or {}),
         reasons=reasons,
+        q_field=q_field,
     )
 
 

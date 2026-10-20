@@ -16,10 +16,10 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.1.3"
-SCHEMA_VERSION = 3
+ADDON_VERSION = "0.2.0"
+SCHEMA_VERSION = 4
 
-# Esquema do protocolo (seção 6.3). arm, variant_id e variant_type ficam vazios até o v1.
+# Esquema do protocolo (seção 6.3). arm e variant_* só são preenchidos nas exposições sorteadas.
 EVENT_COLUMNS: list[tuple[str, str]] = [
     ("event_id", "TEXT PRIMARY KEY"),
     ("session_id", "TEXT"),
@@ -61,6 +61,11 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("arm", "TEXT"),
     ("variant_id", "TEXT"),
     ("variant_type", "TEXT"),
+    ("shown_ok", "INTEGER"),
+    ("shown_hash", "TEXT"),
+    ("draw_seed", "TEXT"),
+    ("draw_note", "TEXT"),
+    ("bank_hash", "TEXT"),
     ("flag_bad", "INTEGER DEFAULT 0"),
 ]
 COLUMN_NAMES = [name for name, _ in EVENT_COLUMNS]
@@ -120,6 +125,21 @@ class EventStore:
             db.commit()
             return cur.rowcount
 
+    def last_event(self) -> Optional[dict[str, Any]]:
+        with closing(self._connect()) as db:
+            row = db.execute("SELECT * FROM events ORDER BY answered_at DESC, seq DESC LIMIT 1").fetchone()
+            return dict(row) if row else None
+
+    def shown_variants(self, card_id: int) -> list[str]:
+        """IDs das variantes já mostradas neste cartão (inclusive as de respostas desfeitas), da mais recente para a mais antiga."""
+        with closing(self._connect()) as db:
+            cur = db.execute(
+                "SELECT variant_id FROM events WHERE card_id = ? AND arm = 'variant' AND shown_ok = 1 AND variant_id IS NOT NULL "
+                "ORDER BY answered_at DESC, seq DESC",
+                (card_id,),
+            )
+            return [r[0] for r in cur.fetchall()]
+
 
 class EventTracker:
     """Junta os três momentos de uma revisão (pergunta, resposta revelada, nota) em um evento."""
@@ -139,9 +159,26 @@ class EventTracker:
         self.seq = 0
         self.pending: Optional[dict[str, Any]] = None
 
-    def question_shown(self, card: Any) -> None:
+    def begin_exposure(self, card: Any) -> dict[str, Any]:
+        """Abre (ou reaproveita, se for o mesmo cartão ainda sem resposta) a exposição atual: estado do cartão, id do evento e anotações do sorteio."""
+        p = self.pending
+        if p and p["card_id"] == getattr(card, "id", None):
+            return p
         snap = self.snapshot_fn(card)
-        self.pending = {"card_id": snap.get("card_id"), "q_shown_at": self.clock(), "a_shown_at": None, "snap": snap}
+        self.pending = {
+            "event_id": uuid.uuid4().hex,
+            "card_id": snap.get("card_id"),
+            "q_shown_at": None,
+            "a_shown_at": None,
+            "snap": snap,
+            "extra": {},
+            "render": None,
+        }
+        return self.pending
+
+    def question_shown(self, card: Any) -> None:
+        p = self.begin_exposure(card)
+        p["q_shown_at"], p["a_shown_at"] = self.clock(), None
 
     def answer_shown(self, card: Any) -> None:
         p = self.pending
@@ -152,9 +189,11 @@ class EventTracker:
         now = self.clock()
         p = self.pending if (self.pending and self.pending["card_id"] == card.id) else None
         rec: dict[str, Any] = dict(p["snap"]) if p else {"card_id": card.id}
+        if p:
+            rec.update(p["extra"])
         self.seq += 1
         rec.update(
-            event_id=uuid.uuid4().hex,
+            event_id=p["event_id"] if p else uuid.uuid4().hex,
             session_id=self.session_id,
             seq=self.seq,
             addon_version=ADDON_VERSION,
@@ -162,7 +201,7 @@ class EventTracker:
             answered_at=now,
             ease=int(ease),
         )
-        if p:
+        if p and p["q_shown_at"] is not None:
             rec["q_shown_at"] = p["q_shown_at"]
             rec["a_shown_at"] = p["a_shown_at"]
             rec["t_total_ms"] = int((now - p["q_shown_at"]) * 1000)
@@ -174,7 +213,7 @@ class EventTracker:
 
 
 def get_salt(path: str) -> bytes:
-    """Sal por instalação, usado só para anonimizar IDs na exportação."""
+    """Sal por instalação: anonimiza IDs na exportação e entra na semente do sorteio."""
     if not os.path.exists(path):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:

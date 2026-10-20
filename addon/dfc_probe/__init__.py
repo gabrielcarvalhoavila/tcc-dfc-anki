@@ -1,8 +1,10 @@
-"""DFC Probe v0: registra as revisões (e o tempo até revelar) para o estudo de dependência da forma do cartão.
+"""DFC Probe: registra as revisões e, na janela do estudo, sorteia original ou variante (dependência da forma do cartão).
 
-Esta versão só registra; não altera nenhum cartão. Ver docs/protocolo.md no repositório do projeto.
+Nada é gravado nas notas: a variante só existe na tela, naquela exibição. Ver docs/protocolo.md no repositório do projeto.
 """
+import datetime
 import os
+import shutil
 import time
 import traceback
 
@@ -10,14 +12,15 @@ from aqt import gui_hooks, mw
 from aqt.qt import QAction, QFileDialog, QInputDialog
 from aqt.utils import showInfo, tooltip
 
-from . import core
-from .anki_adapter import anki_version, make_revlog_matcher, make_snapshot_fn, scheduler_name
+from . import core, variants
+from .anki_adapter import anki_version, make_revlog_matcher, make_snapshot_fn, render_pair, scheduler_name
 
 ADDON_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_FILES = os.environ.get("DFC_PROBE_USER_FILES") or os.path.join(ADDON_DIR, "user_files")
 DB_PATH = os.path.join(USER_FILES, "dfc_events.sqlite3")
 ERR_LOG = os.path.join(USER_FILES, "dfc_errors.log")
 SALT_PATH = os.path.join(USER_FILES, "salt.txt")
+BANK_PATH = os.path.join(USER_FILES, "variant_bank.json")
 
 
 def _log_error() -> None:
@@ -58,6 +61,22 @@ try:
 except Exception:
     _log_error()
 
+_bank = None
+try:
+    if os.path.exists(BANK_PATH):
+        _bank = variants.Bank.load(BANK_PATH)
+except Exception:
+    _log_error()
+
+
+def _draw_enabled() -> bool:
+    return bool(_config().get("draw_enabled", True))
+
+
+def _window_ok() -> bool:
+    cfg = _config()
+    return variants.in_window(datetime.date.today(), str(cfg.get("draw_start", "2026-11-02")), str(cfg.get("draw_end", "2026-11-22")))
+
 
 @_safe
 def _on_question(card) -> None:
@@ -77,9 +96,111 @@ def _on_answered(reviewer, card, ease) -> None:
         _tracker.answered(card, ease)
 
 
+def _prepare_exposure(p: dict, card) -> None:
+    """Decide o braço da exposição e prepara pergunta e resposta com a variante (uma vez por exposição)."""
+    extra, snap = p["extra"], p["snap"]
+    entry = _bank.entry(card.nid) if _bank is not None else None
+    note = mw.col.get_note(card.nid) if entry is not None else None
+    d = variants.decide(
+        entry,
+        card_ord=card.ord,
+        fields_hash_now=variants.fields_hash(note.fields) if note is not None else "",
+        reps=snap.get("reps"),
+        same_day=snap.get("same_day"),
+        draw_on=_draw_enabled(),
+        window_ok=_window_ok(),
+        last_shown=_store.shown_variants(card.id) if entry is not None else [],
+        event_id=p["event_id"],
+        salt=core.get_salt(SALT_PATH),
+        bank_ok=_bank is None or not _bank.is_fake or bool(_config().get("allow_fake_bank", False)),
+    )
+    extra.update(arm=d.arm, draw_note=d.reason, draw_seed=d.seed, bank_hash=_bank.hash if _bank is not None else None)
+    if d.arm is None:
+        return
+    extra["shown_ok"] = 1
+    if d.arm == "variant":
+        extra.update(variant_id=d.variant["id"], variant_type=d.variant["type"])
+        try:
+            value, needles = variants.field_value(entry, d.variant)
+            orig_q, orig_a = render_pair(mw.col, card)
+            var_q, var_a = render_pair(mw.col, card, entry["q_field"], value)
+            if var_q != orig_q and all(n in var_q for n in needles):
+                p["render"] = {"orig_q": orig_q, "var_q": var_q, "orig_a": orig_a, "var_a": var_a}
+            else:
+                extra.update(shown_ok=0, draw_note="render_failed")
+        except Exception:
+            _log_error()
+            extra.update(shown_ok=0, draw_note="render_error")
+
+
+def _on_card_will_show(text, card, kind):
+    """Troca a pergunta (e depois a resposta) pela variante sorteada. Em qualquer falha, devolve o texto original."""
+    try:
+        if kind not in ("reviewQuestion", "reviewAnswer") or _tracker is None or _store is None or not _enabled():
+            return text
+        if kind == "reviewQuestion":
+            p = _tracker.begin_exposure(card)
+            if "arm" not in p["extra"]:
+                _prepare_exposure(p, card)
+        else:
+            p = _tracker.pending
+            if not p or p["card_id"] != card.id:
+                return text
+        out = text
+        r = p["render"]
+        if r is not None and (kind == "reviewQuestion" or p["extra"].get("shown_ok") == 1):
+            old, new = (r["orig_q"], r["var_q"]) if kind == "reviewQuestion" else (r["orig_a"], r["var_a"])
+            if old in text:
+                out = text.replace(old, new, 1)
+            else:
+                p["extra"].update(shown_ok=0, draw_note="template_mismatch" if kind == "reviewQuestion" else "answer_mismatch")
+        if kind == "reviewQuestion" and p["extra"].get("arm") is not None:
+            p["extra"]["shown_hash"] = variants.sha1_short(out)
+        return out
+    except Exception:
+        _log_error()
+        return text
+
+
+@_safe
+def _mark_bad_current() -> None:
+    p = _tracker.pending if _tracker is not None else None
+    if not p or p["extra"].get("arm") != "variant":
+        tooltip("DFC Probe: esta exibição não mostra uma variante.")
+        return
+    p["extra"]["flag_bad"] = 1
+    tooltip("DFC Probe: variante marcada como ruim.")
+
+
+@_safe
+def _mark_bad_last() -> None:
+    row = _store.last_event() if _store is not None else None
+    if not row or row.get("arm") != "variant":
+        tooltip("DFC Probe: a última resposta não foi de uma variante.")
+        return
+    _store.mark_bad(row["event_id"])
+    tooltip("DFC Probe: última variante marcada como ruim.")
+
+
+@_safe
+def _on_shortcuts(state, shortcuts) -> None:
+    key = str(_config().get("bad_shortcut", "b") or "")
+    if state == "review" and key:
+        shortcuts.append((key, _mark_bad_current))
+
+
+@_safe
+def _on_context_menu(reviewer, menu) -> None:
+    action = menu.addAction("Variante ruim (DFC Probe)")
+    action.triggered.connect(lambda _checked=False: _mark_bad_current())
+
+
 gui_hooks.reviewer_did_show_question.append(_on_question)
 gui_hooks.reviewer_did_show_answer.append(_on_answer_shown)
 gui_hooks.reviewer_did_answer_card.append(_on_answered)
+gui_hooks.card_will_show.append(_on_card_will_show)
+gui_hooks.state_shortcuts_will_change.append(_on_shortcuts)
+gui_hooks.reviewer_will_show_context_menu.append(_on_context_menu)
 
 
 @_safe
@@ -91,12 +212,45 @@ def _toggle(checked) -> None:
 
 
 @_safe
+def _toggle_draw(checked) -> None:
+    cfg = _config()
+    cfg["draw_enabled"] = bool(checked)
+    mw.addonManager.writeConfig(__name__, cfg)
+    tooltip("DFC Probe: sorteio " + ("ligado" if checked else "desligado"))
+
+
+@_safe
+def _import_bank() -> None:
+    global _bank
+    path, _ = QFileDialog.getOpenFileName(mw, "Importar banco de variantes", "", "JSON (*.json)")
+    if not path:
+        return
+    try:
+        bank = variants.Bank.load(path)
+    except (OSError, ValueError) as e:
+        showInfo(f"Não foi possível importar: {e}")
+        return
+    os.makedirs(USER_FILES, exist_ok=True)
+    shutil.copyfile(path, BANK_PATH)
+    _bank = bank
+    skipped = f"\n{bank.skipped} entradas ignoradas por formato inválido." if bank.skipped else ""
+    showInfo(f"Banco importado: {len(bank.notes)} notas, {bank.n_variants} variantes (hash {bank.hash}).{skipped}")
+
+
+@_safe
 def _status() -> None:
     n = _store.count() if _store else 0
     sched = scheduler_name(mw.col) if mw.col is not None else None
+    cfg = _config()
+    bank = f"{len(_bank.notes)} notas, {_bank.n_variants} variantes (hash {_bank.hash})" if _bank is not None else "nenhum (importe pelo menu)"
+    if _bank is not None and _bank.is_fake:
+        bank += " — BANCO DE TESTE, variantes falsas: " + ("permitido por allow_fake_bank" if cfg.get("allow_fake_bank") else "não sorteia")
     showInfo(
-        f"DFC Probe {core.ADDON_VERSION}\n\nEventos registrados: {n}\nBanco: {DB_PATH}\n"
-        f"Registro: {'ligado' if _enabled() else 'desligado'}\nAgendador: {sched or 'desconhecido'}\nErros: {ERR_LOG}"
+        f"DFC Probe {core.ADDON_VERSION}\n\nEventos registrados: {n}\nBanco de eventos: {DB_PATH}\n"
+        f"Registro: {'ligado' if _enabled() else 'desligado'}\nAgendador: {sched or 'desconhecido'}\n"
+        f"Banco de variantes: {bank}\n"
+        f"Sorteio: {'ligado' if _draw_enabled() else 'desligado'} (janela {cfg.get('draw_start')} a {cfg.get('draw_end')}; hoje {'dentro' if _window_ok() else 'fora'})\n"
+        f"Atalho de variante ruim: {cfg.get('bad_shortcut', 'b')}\nErros: {ERR_LOG}"
     )
 
 
@@ -139,8 +293,15 @@ def _setup_menu() -> None:
     toggle.setChecked(_enabled())
     toggle.toggled.connect(_toggle)
     menu.addAction(toggle)
+    draw = QAction("Sorteio ativo", mw)
+    draw.setCheckable(True)
+    draw.setChecked(_draw_enabled())
+    draw.toggled.connect(_toggle_draw)
+    menu.addAction(draw)
     for label, fn in (
         ("Status", _status),
+        ("Importar banco de variantes...", _import_bank),
+        ("Marcar a última resposta como variante ruim", _mark_bad_last),
         ("Exportar eventos (CSV)...", _export_events),
         ("Exportar notas para variantes (JSONL)...", _export_notes),
     ):

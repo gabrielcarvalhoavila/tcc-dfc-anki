@@ -42,12 +42,12 @@ def build_bank(
         if not variants:
             continue
         generators.add(g["generator"]["model"])
-        entry: dict[str, Any] = {"kind": card.kind, "ords": card.ords, "fields_hash": card.fields_hash, "variants": variants}
+        entry: dict[str, Any] = {"kind": card.kind, "ords": card.ords, "q_field": card.q_field, "fields_hash": card.fields_hash, "variants": variants}
         if card.kind == "cloze":
             entry["answer_html"] = card.answer_html
         notes[str(card.note_id)] = entry
     return {
-        "schema": 1,
+        "schema": 2,
         "generated_at": now_iso(),
         "generator_models": sorted(generators),
         "judge_models": sorted(j for j in judges if j),

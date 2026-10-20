@@ -1,4 +1,9 @@
 {
   "enabled": true,
+  "draw_enabled": true,
+  "draw_start": "2026-11-02",
+  "draw_end": "2026-11-22",
+  "bad_shortcut": "b",
+  "allow_fake_bank": false,
   "anonymize_export": false
 }

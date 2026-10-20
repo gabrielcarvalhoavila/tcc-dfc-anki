@@ -3,6 +3,8 @@
 Não substitui testar no Anki real: só pega erros de sintaxe, de ligação e de lógica.
 """
 import csv
+import datetime
+import hashlib
 import importlib
 import json
 import os
@@ -60,6 +62,9 @@ class FakeNote:
     guid = "g1"
     tags = ["t"]
 
+    def __init__(self):
+        self.fields = list(STATE.get("fields", ["Q", "A"]))
+
     def items(self):
         return [("Front", "Q"), ("Back", "A")]
 
@@ -116,9 +121,53 @@ class FakeCol:
 
 
 def make_card(**over):
-    base = dict(id=1, nid=2, ord=0, did=3, odid=0, due=990, odue=0, type=2, queue=2, reps=6, lapses=0, ivl=30, factor=2500, memory_state=None, note=lambda: FakeNote())
+    base = dict(
+        id=1, nid=2, ord=0, did=3, odid=0, due=990, odue=0, type=2, queue=2, reps=6, lapses=0, ivl=30, factor=2500,
+        memory_state=None, note=lambda: FakeNote(), template=lambda: {"name": "Card 1"},
+    )
     base.update(over)
     return types.SimpleNamespace(**base)
+
+
+def _render(note):
+    if "render_error" in STATE:
+        raise RuntimeError("falha ao renderizar")
+    q = note.fields[0]
+    return types.SimpleNamespace(question_text=q, answer_text=q + "<hr id=answer>" + note.fields[1])
+
+
+class FakeRenderContext:
+    @staticmethod
+    def from_card_layout(note, card, notetype, template, fill_empty):
+        return types.SimpleNamespace(render=lambda: _render(note))
+
+
+def sha1_12(text):
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+
+def bank_bytes(fields=("Q", "A"), note_id=2):
+    entry = {
+        "kind": "basic",
+        "ords": [0],
+        "q_field": 0,
+        "fields_hash": sha1_12("\x1f".join(fields)),
+        "variants": [
+            {"id": f"{note_id}-paraphrase-aaa", "type": "paraphrase", "text": "Variante A?"},
+            {"id": f"{note_id}-reorder-bbb", "type": "reorder", "text": "Variante B?"},
+        ],
+    }
+    return json.dumps({"schema": 2, "generated_at": "t", "generator_models": ["g"], "judge_models": ["j"], "notes": {str(note_id): entry}}).encode()
+
+
+class ContextMenu:
+    def __init__(self):
+        self.actions = []
+
+    def addAction(self, text):
+        action = Action(text)
+        self.actions.append(action)
+        return action
 
 
 class SmokeTest(unittest.TestCase):
@@ -130,8 +179,25 @@ class SmokeTest(unittest.TestCase):
         STATE.update(cutoff=int(now) + 3600, last_ms=int((now - 5 * 86400) * 1000), n_reviews=3, match=1)
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["DFC_PROBE_USER_FILES"] = self.tmp.name
-        self.cfg = {"enabled": True, "anonymize_export": False}
-        self.hooks = types.SimpleNamespace(reviewer_did_show_question=[], reviewer_did_show_answer=[], reviewer_did_answer_card=[])
+        today = datetime.date.today()
+        self.cfg = {
+            "enabled": True,
+            "anonymize_export": False,
+            "draw_enabled": True,
+            "draw_start": (today - datetime.timedelta(days=1)).isoformat(),
+            "draw_end": (today + datetime.timedelta(days=30)).isoformat(),
+            "bad_shortcut": "b",
+        }
+        self.hooks = types.SimpleNamespace(
+            reviewer_did_show_question=[],
+            reviewer_did_show_answer=[],
+            reviewer_did_answer_card=[],
+            card_will_show=[],
+            state_shortcuts_will_change=[],
+            reviewer_will_show_context_menu=[],
+        )
+        with open(os.path.join(self.tmp.name, "variant_bank.json"), "wb") as f:
+            f.write(bank_bytes())
         self.menu_tools = Menu()
         self.messages, self.dialog = [], {"path": ""}
         mw = types.SimpleNamespace(
@@ -144,13 +210,21 @@ class SmokeTest(unittest.TestCase):
         aqt.mw, aqt.gui_hooks = mw, self.hooks
         qt = types.ModuleType("aqt.qt")
         qt.QAction = Action
-        qt.QFileDialog = types.SimpleNamespace(getSaveFileName=lambda *a, **k: (self.dialog["path"], ""))
+        qt.QFileDialog = types.SimpleNamespace(
+            getSaveFileName=lambda *a, **k: (self.dialog["path"], ""),
+            getOpenFileName=lambda *a, **k: (self.dialog.get("open", ""), ""),
+        )
         qt.QInputDialog = types.SimpleNamespace(getText=lambda *a, **k: ("deck:x", True))
         utils = types.ModuleType("aqt.utils")
         utils.showInfo = self.messages.append
         utils.tooltip = self.messages.append
-        self.saved = {m: sys.modules.get(m) for m in ("aqt", "aqt.qt", "aqt.utils")}
-        sys.modules.update({"aqt": aqt, "aqt.qt": qt, "aqt.utils": utils})
+        anki = types.ModuleType("anki")
+        anki_template = types.ModuleType("anki.template")
+        anki_template.TemplateRenderContext = FakeRenderContext
+        anki.template = anki_template
+        names = ("aqt", "aqt.qt", "aqt.utils", "anki", "anki.template")
+        self.saved = {m: sys.modules.get(m) for m in names}
+        sys.modules.update({"aqt": aqt, "aqt.qt": qt, "aqt.utils": utils, "anki": anki, "anki.template": anki_template})
         for name in [m for m in sys.modules if m == "dfc_probe" or m.startswith("dfc_probe.")]:
             del sys.modules[name]
         self.mod = importlib.import_module("dfc_probe")
@@ -273,6 +347,193 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(len(recs), 2)
         self.assertEqual(recs[0]["fields"], {"Front": "Q", "Back": "A"})
         self.assertFalse(os.path.exists(self.mod.ERR_LOG))
+
+    # ---- sorteio e exibição das variantes ----
+
+    def force(self, probability):
+        self.mod.variants.VARIANT_PROBABILITY = probability
+
+    def study(self, card, ease=3, question="Q", answer="Q<hr id=answer>A"):
+        """Sequência do Reviewer: texto da pergunta, pergunta mostrada, texto da resposta, resposta mostrada, nota."""
+        shown_q = self.hooks.card_will_show[0](question, card, "reviewQuestion")
+        self.hooks.reviewer_did_show_question[0](card)
+        shown_a = self.hooks.card_will_show[0](answer, card, "reviewAnswer")
+        self.hooks.reviewer_did_show_answer[0](card)
+        self.hooks.reviewer_did_answer_card[0](None, card, ease)
+        return shown_q, shown_a
+
+    def rows(self):
+        return self.mod._store.rows()
+
+    def test_variant_is_shown_on_both_sides_and_logged(self):
+        self.force(1.0)
+        q, a = self.study(make_card())
+        self.assertIn(q, ("Variante A?", "Variante B?"))
+        self.assertEqual(a, q + "<hr id=answer>A")
+        (row,) = self.rows()
+        self.assertEqual((row["arm"], row["shown_ok"], row["draw_note"], row["same_day"]), ("variant", 1, "ok", 0))
+        self.assertIn(row["variant_id"], ("2-paraphrase-aaa", "2-reorder-bbb"))
+        self.assertEqual(row["shown_hash"], sha1_12(q))
+        self.assertTrue(row["draw_seed"] and row["bank_hash"])
+
+    def test_original_arm_shows_the_card_untouched(self):
+        self.force(0.0)
+        self.assertEqual(self.study(make_card()), ("Q", "Q<hr id=answer>A"))
+        (row,) = self.rows()
+        self.assertEqual((row["arm"], row["shown_ok"], row["variant_id"], row["shown_hash"]), ("original", 1, None, sha1_12("Q")))
+
+    def test_same_day_exposure_is_logged_without_a_draw(self):
+        self.force(1.0)
+        STATE["last_ms"] = (STATE["cutoff"] - 600) * 1000
+        self.assertEqual(self.study(make_card())[0], "Q")
+        (row,) = self.rows()
+        self.assertEqual((row["arm"], row["draw_note"], row["same_day"]), (None, "same_day", 1))
+
+    def test_ineligible_cards_are_not_drawn(self):
+        self.force(1.0)
+        self.study(make_card(id=1, reps=0))
+        STATE["fields"] = ["Q editada", "A"]
+        self.study(make_card(id=2))
+        STATE.pop("fields")
+        self.study(make_card(id=3, ord=1))
+        self.study(make_card(id=4, nid=99))
+        self.assertEqual([r["draw_note"] for r in self.rows()], ["reps0", "note_edited", "ord_mismatch", "no_entry"])
+        self.assertTrue(all(r["arm"] is None for r in self.rows()))
+
+    def test_outside_the_window_or_switched_off_nothing_is_drawn(self):
+        self.force(1.0)
+        today = datetime.date.today()
+        self.cfg["draw_start"] = (today + datetime.timedelta(days=5)).isoformat()
+        self.study(make_card(id=1))
+        self.cfg["draw_start"] = (today - datetime.timedelta(days=1)).isoformat()
+        self.cfg["draw_enabled"] = False
+        self.study(make_card(id=2))
+        self.assertEqual([r["draw_note"] for r in self.rows()], ["outside_window", "off"])
+
+    def test_logging_off_leaves_the_card_alone(self):
+        self.force(1.0)
+        self.cfg["enabled"] = False
+        self.assertEqual(self.study(make_card()), ("Q", "Q<hr id=answer>A"))
+        self.assertEqual(self.mod._store.count(), 0)
+
+    def test_decision_is_kept_for_the_whole_exposure(self):
+        self.force(1.0)
+        card = make_card()
+        first = self.hooks.card_will_show[0]("Q", card, "reviewQuestion")
+        self.force(0.0)  # um novo sorteio daria o original
+        again = self.hooks.card_will_show[0]("Q", card, "reviewQuestion")  # por exemplo, depois de editar a nota
+        self.assertEqual(first, again)
+        self.assertNotEqual(first, "Q")
+
+    def test_variants_do_not_repeat_on_the_same_card(self):
+        self.force(1.0)
+        shown = [self.study(make_card())[0] for _ in range(2)]
+        self.assertEqual(sorted(shown), ["Variante A?", "Variante B?"])
+
+    def test_template_mismatch_falls_back_to_the_original_text(self):
+        self.force(1.0)
+        q, a = self.study(make_card(), question="Texto sem o original", answer="Outra resposta")
+        self.assertEqual((q, a), ("Texto sem o original", "Outra resposta"))
+        (row,) = self.rows()
+        self.assertEqual((row["arm"], row["shown_ok"], row["draw_note"]), ("variant", 0, "template_mismatch"))
+
+    def test_answer_side_mismatch_invalidates_the_exposure(self):
+        self.force(1.0)
+        q, a = self.study(make_card(), answer="Resposta sem a pergunta")
+        self.assertNotEqual(q, "Q")
+        self.assertEqual(a, "Resposta sem a pergunta")
+        (row,) = self.rows()
+        self.assertEqual((row["shown_ok"], row["draw_note"]), (0, "answer_mismatch"))
+
+    def test_render_error_falls_back_and_is_logged(self):
+        self.force(1.0)
+        STATE["render_error"] = True
+        self.assertEqual(self.study(make_card()), ("Q", "Q<hr id=answer>A"))
+        (row,) = self.rows()
+        self.assertEqual((row["arm"], row["shown_ok"], row["draw_note"]), ("variant", 0, "render_error"))
+        self.assertTrue(os.path.exists(self.mod.ERR_LOG))
+
+    def test_bad_variant_shortcut_marks_the_current_exposure(self):
+        self.force(1.0)
+        shortcuts = []
+        self.hooks.state_shortcuts_will_change[0]("deckBrowser", shortcuts)
+        self.assertEqual(shortcuts, [])
+        self.hooks.state_shortcuts_will_change[0]("review", shortcuts)
+        ((key, press),) = shortcuts
+        self.assertEqual(key, "b")
+        card = make_card()
+        self.hooks.card_will_show[0]("Q", card, "reviewQuestion")
+        self.hooks.reviewer_did_show_question[0](card)
+        press()
+        self.hooks.reviewer_did_answer_card[0](None, card, 3)
+        (row,) = self.rows()
+        self.assertEqual(row["flag_bad"], 1)
+
+    def test_bad_variant_shortcut_ignores_the_original_arm(self):
+        self.force(0.0)
+        card = make_card()
+        self.hooks.card_will_show[0]("Q", card, "reviewQuestion")
+        shortcuts = []
+        self.hooks.state_shortcuts_will_change[0]("review", shortcuts)
+        shortcuts[0][1]()
+        self.hooks.reviewer_did_answer_card[0](None, card, 3)
+        self.assertTrue(any("não mostra uma variante" in m for m in self.messages))
+        self.assertEqual(self.rows()[0]["flag_bad"], 0)
+
+    def test_bad_variant_menu_marks_the_last_answer_and_context_menu_entry_exists(self):
+        self.force(1.0)
+        self.study(make_card())
+        self.menu_action("Marcar a última resposta como variante ruim").triggered.emit(False)
+        self.assertEqual(self.rows()[-1]["flag_bad"], 1)
+        menu = ContextMenu()
+        self.hooks.reviewer_will_show_context_menu[0](None, menu)
+        (action,) = menu.actions
+        self.assertEqual(action.text, "Variante ruim (DFC Probe)")
+        self.force(0.0)
+        self.study(make_card(id=7))
+        self.menu_action("Marcar a última resposta como variante ruim").triggered.emit(False)
+        self.assertEqual(self.rows()[-1]["flag_bad"], 0)  # a última foi o original
+
+    def test_import_bank_from_the_menu_and_status(self):
+        path = os.path.join(self.tmp.name, "novo.json")
+        with open(path, "wb") as f:
+            f.write(bank_bytes(note_id=77))
+        self.dialog["open"] = path
+        self.menu_action("Importar banco de variantes...").triggered.emit(False)
+        self.assertTrue(any("Banco importado: 1 notas, 2 variantes" in m for m in self.messages))
+        self.menu_action("Status").triggered.emit(False)
+        self.assertTrue(any("Banco de variantes: 1 notas, 2 variantes" in m and "Sorteio: ligado" in m for m in self.messages))
+        bad = os.path.join(self.tmp.name, "ruim.json")
+        with open(bad, "wb") as f:
+            f.write(b"nao e json")
+        self.dialog["open"] = bad
+        self.menu_action("Importar banco de variantes...").triggered.emit(False)
+        self.assertTrue(any("Não foi possível importar" in m for m in self.messages))
+        self.force(1.0)
+        self.assertEqual(self.study(make_card(nid=2))[0], "Q")  # o banco novo só tem a nota 77
+
+    def test_fake_bank_never_draws_unless_allowed(self):
+        fake = json.loads(bank_bytes())
+        fake["generator_models"] = ["fake"]
+        path = os.path.join(self.tmp.name, "fake.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(fake, f)
+        self.dialog["open"] = path
+        self.menu_action("Importar banco de variantes...").triggered.emit(False)
+        self.force(1.0)
+        self.assertEqual(self.study(make_card())[0], "Q")
+        self.menu_action("Status").triggered.emit(False)
+        self.assertTrue(any("BANCO DE TESTE" in m and "não sorteia" in m for m in self.messages))
+        self.cfg["allow_fake_bank"] = True
+        self.assertNotEqual(self.study(make_card(id=9))[0], "Q")
+        self.assertEqual([r["draw_note"] for r in self.rows()], ["fake_bank", "ok"])
+
+    def test_draw_switch_in_the_menu_writes_the_config(self):
+        draw = self.menu_tools.menus[0].actions[1]
+        draw.toggled.emit(False)
+        self.assertFalse(self.cfg["draw_enabled"])
+        draw.toggled.emit(True)
+        self.assertTrue(self.cfg["draw_enabled"])
 
 
 if __name__ == "__main__":
