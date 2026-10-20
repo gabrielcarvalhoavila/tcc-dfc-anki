@@ -35,7 +35,7 @@ class FakeClock:
 
 
 def snapshot(card):
-    return {"card_id": card.id, "note_id": card.id * 10, "deck_id": 3, "deck_name": "Deck", "reps": 7, "lapses": 0, "prev_eases": [3, 3, 2], "mode": "regular"}
+    return {"card_id": card.id, "note_id": card.id * 10, "deck_id": 3, "deck_name": "Deck", "profile": "Perfil", "reps": 7, "lapses": 0, "prev_eases": [3, 3, 2], "mode": "regular"}
 
 
 class TrackerTest(unittest.TestCase):
@@ -122,9 +122,10 @@ class ExportTest(unittest.TestCase):
         path = os.path.join(self.tmp.name, "o.csv")
         self.assertEqual(core.export_csv(self.store, path), 1)
         (row,) = self.read(path)
-        self.assertEqual(list(row.keys()), core.COLUMN_NAMES)
+        self.assertEqual(list(row.keys()), core.COLUMN_NAMES + list(core.EXPORT_EXTRA))
         self.assertEqual(row["note_id"], "50")
         self.assertEqual(row["deck_name"], "Deck")
+        self.assertEqual((row["revlog_match"], row["superseded"]), ("", "0"))  # sem conciliador: desconhecido
 
     def test_anonymize_hashes_ids_with_salt(self):
         salt_path = os.path.join(self.tmp.name, "salt.txt")
@@ -134,7 +135,7 @@ class ExportTest(unittest.TestCase):
         core.export_csv(self.store, path, anonymize=True, salt=salt)
         (row,) = self.read(path)
         for col in core.ID_COLUMNS:
-            self.assertNotIn(row[col], ("50", "5", "3", "Deck"))
+            self.assertNotIn(row[col], ("50", "5", "3", "Deck", "Perfil"))
             self.assertEqual(len(row[col]), 16)
         other = os.path.join(self.tmp.name, "o2.csv")
         core.export_csv(self.store, other, anonymize=True, salt=b"outro-sal")
@@ -144,6 +145,33 @@ class ExportTest(unittest.TestCase):
     def test_note_record(self):
         rec = core.note_to_record(7, "g", "Basic", [("Front", "q"), ("Back", "a")], ["t"], ["B", "A", "A"])
         self.assertEqual(rec, {"note_id": 7, "guid": "g", "model": "Basic", "fields": {"Front": "q", "Back": "a"}, "tags": ["t"], "decks": ["A", "B"]})
+
+    def test_undone_answer_is_superseded_and_has_no_revlog_pair(self):
+        tracker = core.EventTracker(self.store, snapshot, "26.05", FakeClock(2000.0))
+        card = types.SimpleNamespace(id=5)
+        tracker.question_shown(card)
+        tracker.answered(card, 1)  # mesmo cartão e mesmo reps do setUp: a resposta 3 foi desfeita
+        path = os.path.join(self.tmp.name, "o.csv")
+        core.export_csv(self.store, path, revlog_match=lambda cid, ease, ts: ease == 1)
+        first, second = self.read(path)
+        self.assertEqual((first["ease"], first["superseded"], first["revlog_match"]), ("3", "1", "0"))
+        self.assertEqual((second["ease"], second["superseded"], second["revlog_match"]), ("1", "0", "1"))
+
+    def test_reconciliation_uses_real_ids_even_when_anonymizing(self):
+        path = os.path.join(self.tmp.name, "o.csv")
+        core.export_csv(self.store, path, anonymize=True, salt=b"s", revlog_match=lambda cid, ease, ts: cid == 5)
+        (row,) = self.read(path)
+        self.assertEqual(row["revlog_match"], "1")
+
+    def test_reconciliation_failure_leaves_blank(self):
+        path = os.path.join(self.tmp.name, "o.csv")
+        core.export_csv(self.store, path, revlog_match=lambda *a: 1 / 0)
+        (row,) = self.read(path)
+        self.assertEqual(row["revlog_match"], "")
+
+    def test_mark_superseded_ignores_unknown_reps(self):
+        rows = [{"card_id": 1, "reps": 4}, {"card_id": 1, "reps": 4}, {"card_id": 1, "reps": 5}, {"card_id": 2, "reps": None}, {"card_id": 2, "reps": None}]
+        self.assertEqual(core.mark_superseded(rows), [1, 0, 0, 0, 0])
 
 
 class MigrationTest(unittest.TestCase):

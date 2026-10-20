@@ -16,8 +16,8 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.1.2"
-SCHEMA_VERSION = 2
+ADDON_VERSION = "0.1.3"
+SCHEMA_VERSION = 3
 
 # Esquema do protocolo (seção 6.3). arm, variant_id e variant_type ficam vazios até o v1.
 EVENT_COLUMNS: list[tuple[str, str]] = [
@@ -26,6 +26,7 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("seq", "INTEGER"),
     ("addon_version", "TEXT"),
     ("anki_version", "TEXT"),
+    ("profile", "TEXT"),
     ("q_shown_at", "REAL"),
     ("a_shown_at", "REAL"),
     ("answered_at", "REAL"),
@@ -43,6 +44,8 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("factor", "INTEGER"),
     ("overdue_days", "INTEGER"),
     ("days_since_last_review", "REAL"),
+    ("same_day", "INTEGER"),
+    ("n_reviews", "INTEGER"),
     ("last_ease", "INTEGER"),
     ("prev_eases", "TEXT"),
     ("in_filtered", "INTEGER"),
@@ -61,7 +64,8 @@ EVENT_COLUMNS: list[tuple[str, str]] = [
     ("flag_bad", "INTEGER DEFAULT 0"),
 ]
 COLUMN_NAMES = [name for name, _ in EVENT_COLUMNS]
-ID_COLUMNS = ("note_id", "card_id", "deck_id", "deck_name")
+EXPORT_EXTRA = ("revlog_match", "superseded")  # derivadas na exportação, não ficam no banco
+ID_COLUMNS = ("note_id", "card_id", "deck_id", "deck_name", "profile")
 
 
 def _to_db(value: Any) -> Any:
@@ -187,15 +191,32 @@ def anonymize_row(row: dict[str, Any], salt: bytes) -> dict[str, Any]:
     return out
 
 
-def export_csv(store: EventStore, path: str, anonymize: bool = False, salt: bytes = b"") -> int:
+def mark_superseded(rows: list[dict[str, Any]]) -> list[int]:
+    """O Anki só avança `reps` com resposta válida: se (cartão, reps) reaparece depois, a resposta anterior foi desfeita."""
+    last = {(r.get("card_id"), r.get("reps")): i for i, r in enumerate(rows)}
+    return [int(r.get("reps") is not None and last[(r.get("card_id"), r.get("reps"))] != i) for i, r in enumerate(rows)]
+
+
+def _revlog_pair(match: Optional[Callable[[int, int, float], bool]], row: dict[str, Any]) -> Optional[int]:
+    if match is None or None in (row.get("card_id"), row.get("ease"), row.get("answered_at")):
+        return None
+    try:
+        return int(bool(match(row["card_id"], row["ease"], row["answered_at"])))
+    except Exception:
+        return None
+
+
+def export_csv(store: EventStore, path: str, anonymize: bool = False, salt: bytes = b"", revlog_match: Optional[Callable[[int, int, float], bool]] = None) -> int:
     rows = store.rows()
+    superseded = mark_superseded(rows)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(COLUMN_NAMES)
-        for row in rows:
+        writer.writerow(COLUMN_NAMES + list(EXPORT_EXTRA))
+        for row, sup in zip(rows, superseded):
+            pair = _revlog_pair(revlog_match, row)
             if anonymize:
                 row = anonymize_row(row, salt)
-            writer.writerow([row.get(c) for c in COLUMN_NAMES])
+            writer.writerow([row.get(c) for c in COLUMN_NAMES] + [pair, sup])
     return len(rows)
 
 

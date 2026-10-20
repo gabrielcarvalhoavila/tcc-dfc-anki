@@ -2,11 +2,13 @@
 
 Não substitui testar no Anki real: só pega erros de sintaxe, de ligação e de lógica.
 """
+import csv
 import importlib
 import json
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 
@@ -70,15 +72,30 @@ class FakeNote:
 
 QUERIES = []
 CONFIG = {}
+STATE = {}
 
 
 def _scalar(sql, *args):
     QUERIES.append(sql)
-    return 1_700_000_000_000
+    if "type = 1" in sql:
+        return STATE["n_reviews"]
+    if "between" in sql:
+        return STATE["match"]
+    return STATE["last_ms"]
+
+
+class FakeSched:
+    today = 1000
+
+    @property
+    def day_cutoff(self):
+        if "no_cutoff" in STATE:
+            raise AttributeError("sem day_cutoff")
+        return STATE["cutoff"]
 
 
 class FakeCol:
-    sched = types.SimpleNamespace(today=1000)
+    sched = FakeSched()
     db = types.SimpleNamespace(scalar=_scalar, list=lambda sql, *a: [3, 3, 1])
     decks = types.SimpleNamespace(
         name=lambda did: f"Deck{did}",
@@ -108,6 +125,9 @@ class SmokeTest(unittest.TestCase):
     def setUp(self):
         CONFIG.clear()
         CONFIG["fsrs"] = True
+        now = time.time()
+        STATE.clear()
+        STATE.update(cutoff=int(now) + 3600, last_ms=int((now - 5 * 86400) * 1000), n_reviews=3, match=1)
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["DFC_PROBE_USER_FILES"] = self.tmp.name
         self.cfg = {"enabled": True, "anonymize_export": False}
@@ -116,6 +136,7 @@ class SmokeTest(unittest.TestCase):
         self.messages, self.dialog = [], {"path": ""}
         mw = types.SimpleNamespace(
             col=FakeCol(),
+            pm=types.SimpleNamespace(name="Perfil"),
             addonManager=types.SimpleNamespace(getConfig=lambda name: self.cfg, writeConfig=lambda name, c: self.cfg.update(c)),
             form=types.SimpleNamespace(menuTools=self.menu_tools),
         )
@@ -187,6 +208,37 @@ class SmokeTest(unittest.TestCase):
         self.review(make_card())
         (row,) = self.mod._store.rows()
         self.assertEqual((row["scheduler"], row["desired_retention"]), (None, None))
+
+    def test_logs_review_count_profile_and_same_day(self):
+        self.review(make_card())
+        (row,) = self.mod._store.rows()
+        self.assertEqual((row["n_reviews"], row["profile"], row["same_day"]), (3, "Perfil", 0))
+
+    def test_same_day_follows_the_anki_day_boundary(self):
+        cutoff = STATE["cutoff"]
+        for card_id, last_s in ((1, cutoff - 600), (2, cutoff - 86_400 - 600)):
+            STATE["last_ms"] = last_s * 1000
+            self.review(make_card(id=card_id))
+        self.assertEqual([r["same_day"] for r in self.mod._store.rows()], [1, 0])
+
+    def test_same_day_falls_back_to_half_a_day_without_day_cutoff(self):
+        STATE["no_cutoff"] = True
+        now_ms = time.time() * 1000
+        for card_id, hours_ago in ((1, 1), (2, 48)):
+            STATE["last_ms"] = int(now_ms - hours_ago * 3_600_000)
+            self.review(make_card(id=card_id))
+        self.assertEqual([r["same_day"] for r in self.mod._store.rows()], [1, 0])
+
+    def test_export_reconciles_events_with_the_revlog(self):
+        self.review(make_card())
+        out = os.path.join(self.tmp.name, "ev.csv")
+        self.dialog["path"] = out
+        for match in (1, 0):
+            STATE["match"] = match
+            self.menu_action("Exportar eventos (CSV)...").triggered.emit(False)
+            with open(out, newline="", encoding="utf-8") as f:
+                (row,) = list(csv.DictReader(f))
+            self.assertEqual(row["revlog_match"], str(match))
 
     def test_filtered_deck_without_resched_is_marked(self):
         self.review(make_card(odid=7, odue=985))

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 
 def _safe(fn: Callable[[], Any], default: Any = None) -> Any:
@@ -35,6 +35,24 @@ def scheduler_name(col: Any) -> Any:
         return None
 
 
+def _same_day(last_id_ms: Any, day_cutoff: Any, now_ms: float) -> Optional[int]:
+    if not last_id_ms:
+        return None
+    if day_cutoff:
+        return int(last_id_ms / 1000 >= day_cutoff - 86_400)  # dia do Anki, não 24 h corridas
+    return int(now_ms - last_id_ms < 43_200_000)  # sem day_cutoff: meio dia
+
+
+def make_revlog_matcher(mw: Any) -> Callable[[int, int, float], bool]:
+    """Diz se o histórico de revisões do Anki tem a resposta do evento (o id do revlog sai alguns ms antes do nosso horário)."""
+
+    def match(card_id: int, ease: int, answered_at: float) -> bool:
+        ms = int(answered_at * 1000)
+        return bool(mw.col.db.scalar("select count(*) from revlog where cid = ? and ease = ? and id between ? and ?", card_id, ease, ms - 2000, ms + 500))
+
+    return match
+
+
 def _model_name(card: Any) -> Any:
     note = _safe(lambda: card.note())
     nt = _safe(lambda: note.note_type()) if note is not None else None
@@ -58,6 +76,8 @@ def make_snapshot_fn(mw: Any) -> Callable[[Any], dict[str, Any]]:
             overdue = int(today - due)
         last_id = _safe(lambda: col.db.scalar("select max(id) from revlog where cid = ? and ease > 0", card.id))
         eases = _safe(lambda: col.db.list("select ease from revlog where cid = ? and ease > 0 order by id desc limit 3", card.id), []) or []
+        n_reviews = _safe(lambda: col.db.scalar("select count(*) from revlog where cid = ? and type = 1 and ease > 0", card.id))
+        same_day = _same_day(last_id, _safe(lambda: col.sched.day_cutoff), time.time() * 1000)
         dyn = _safe(lambda: col.decks.get(card.did, default=False)) if odid else None
         resched = int(bool(dyn.get("resched", True))) if dyn else None
         if odid:
@@ -68,6 +88,7 @@ def make_snapshot_fn(mw: Any) -> Callable[[Any], dict[str, Any]]:
         scheduler = scheduler_name(col)
         retention = _safe(lambda: col.decks.config_dict_for_deck_id(deck_id).get("desiredRetention")) if scheduler == "fsrs" else None
         return {
+            "profile": _safe(lambda: mw.pm.name),
             "card_id": card.id,
             "note_id": card.nid,
             "card_ord": _safe(lambda: card.ord),
@@ -82,6 +103,8 @@ def make_snapshot_fn(mw: Any) -> Callable[[Any], dict[str, Any]]:
             "factor": _safe(lambda: card.factor),
             "overdue_days": overdue,
             "days_since_last_review": round((time.time() * 1000 - last_id) / 86_400_000, 3) if last_id else None,
+            "same_day": same_day,
+            "n_reviews": n_reviews,
             "last_ease": eases[0] if eases else None,
             "prev_eases": eases,
             "in_filtered": int(bool(odid)),

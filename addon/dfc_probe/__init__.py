@@ -11,7 +11,7 @@ from aqt.qt import QAction, QFileDialog, QInputDialog
 from aqt.utils import showInfo, tooltip
 
 from . import core
-from .anki_adapter import anki_version, make_snapshot_fn, scheduler_name
+from .anki_adapter import anki_version, make_revlog_matcher, make_snapshot_fn, scheduler_name
 
 ADDON_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_FILES = os.environ.get("DFC_PROBE_USER_FILES") or os.path.join(ADDON_DIR, "user_files")
@@ -107,7 +107,8 @@ def _export_events() -> None:
         return
     anonymize = bool(_config().get("anonymize_export", False))
     salt = core.get_salt(SALT_PATH) if anonymize else b""
-    n = core.export_csv(_store, path, anonymize=anonymize, salt=salt)
+    matcher = make_revlog_matcher(mw) if mw.col is not None else None
+    n = core.export_csv(_store, path, anonymize=anonymize, salt=salt, revlog_match=matcher)
     tooltip(f"{n} eventos exportados" + (" (IDs anonimizados)" if anonymize else ""))
 
 
