@@ -77,10 +77,10 @@ def cloze_note(note_id, card_id, text):
 # nota -> (nota no formato do AnkiConnect, baralho, contadores do cartão, revlog)
 NOTES = {
     1: (ac_note(1, 101, "O que é NAT na prática?", "Tradução de endereços de rede."), "Redes", {"reps": 8, "lapses": 0, "queue": 2}, history(range(8))),
-    2: (cloze_note(2, 102, "O {{c1::TCP}} é confiável"), "Redes::Camada 4", {"reps": 3, "lapses": 0, "queue": 2}, history([5, 6, 7])),
+    2: (cloze_note(2, 102, "O {{c1::TCP}} é um protocolo de transporte confiável"), "Redes::Camada 4", {"reps": 3, "lapses": 0, "queue": 2}, history([5, 6, 7])),
     3: (ac_note(3, 103, "Figura <img src='x.png'>", "resposta longa qualquer"), "Redes", {"reps": 9, "lapses": 0, "queue": 2}, history(range(9))),
     4: (ac_note(4, 104, "Qual a função do DNS?", "Converter nomes em endereços IP."), "Outro", {"reps": 6, "lapses": 0, "queue": -1}, []),
-    5: (cloze_note(5, 105, "O {{c1::TCP}} e o {{c2::UDP}} são protocolos"), "Redes", {"reps": 7, "lapses": 0, "queue": 2}, history(range(7))),
+    5: (cloze_note(5, 105, "O {{c1::TCP}} e o {{c2::UDP}} são dois protocolos de transporte"), "Redes", {"reps": 7, "lapses": 0, "queue": 2}, history(range(7))),
 }
 BY_CARD = {n[0]["cards"][0]: n for n in NOTES.values()}
 
@@ -122,10 +122,10 @@ class SurveyTest(unittest.TestCase):
         self.assertEqual(survey.bucket(by_id[1], 0), "sorteavel")
         self.assertEqual(survey.bucket(by_id[1], 1), "outro cartao da nota")
         self.assertEqual(survey.bucket(by_id[3], 0), "media_or_latex")
-        self.assertEqual(survey.bucket(by_id[5], 0), "so_multi_cloze")
+        self.assertEqual(survey.bucket(by_id[5], 0), "multi_cloze")
         self.assertEqual(survey.bucket(None, 0), "nota fora da busca")
-        img = cards.parse_note(cloze_note(9, 109, "O {{c1::TCP}} e o {{c2::UDP}} <img src='a.png'>"))
-        self.assertEqual(survey.bucket(img, 0), "multi_cloze+media_or_latex")
+        formula = cards.parse_note(cloze_note(9, 109, "O {{c1::TCP}} e o {{c2::UDP}} são dois protocolos de transporte \\(x^2\\)"))
+        self.assertEqual(survey.bucket(formula, 0), "multi_cloze+media_or_latex")
 
     def test_report_has_note_types_decks_coverage_and_projections(self):
         _, lines = survey.run("deck:*", fake_invoke, days=28, rollover_hour=4, now=self.now, log=lambda s: None)
@@ -138,11 +138,10 @@ class SurveyTest(unittest.TestCase):
         self.assertIn("respostas de qualquer nota: 27", text)
         self.assertRegex(text, r"sorteavel\s+11\s+41%\s+9\s+3")
         self.assertRegex(text, r"media_or_latex\s+9\s+33%")
-        self.assertRegex(text, r"so_multi_cloze\s+7\s+26%\s+6\s+2")
+        self.assertRegex(text, r"multi_cloze\s+7\s+26%\s+6\s+2")
         self.assertRegex(text, r"Redes\s+27\s+11\n")
         self.assertRegex(text, r"Redes\s+basic\s+1\s+7\s+3\s+4")
         self.assertIn("~7 eventos (~2 suspeitos)", text)  # 21/28 de 9 e de 3
-        self.assertIn("+6 eventos (+2 suspeitos) em 28 dias; na janela: ~11 eventos (~4 suspeitos)", text)
 
     def test_cli_prints_only_aggregates_and_can_save_the_notes(self):
         out = os.path.join(tempfile.mkdtemp(), "notas.jsonl")

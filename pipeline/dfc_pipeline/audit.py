@@ -30,6 +30,9 @@ def build_sheet(cards_by_id: dict[int, Card], validation: list[dict[str, Any]], 
     for v in validation:
         if v.get("auto_valid") and v["note_id"] in cards_by_id:
             pool[v["type"]].append(v)
+    with_image = {v["note_id"] for v in validation if v.get("auto_valid") and cards_by_id.get(v["note_id"]) and cards_by_id[v["note_id"]].images_html}
+    for note_id in sorted(with_image):  # sem_imagem não passa pelo LLM: entra na auditoria humana, que decide se a imagem era dispensável
+        pool["sem_imagem"].append({"variant_id": f"{note_id}-sem_imagem", "note_id": note_id, "type": "sem_imagem", "text": "(a mesma ficha, sem a imagem)"})
     types = sorted(pool)
     if not types:
         raise ValueError("Nenhuma variante aprovada na validação automática.")

@@ -6,9 +6,10 @@ from typing import Any
 
 from .cards import Card
 
-GEN_PROMPT_VERSION = "gen-v1"
-JUDGE_PROMPT_VERSION = "judge-v1"
-VARIANT_TYPES = ("paraphrase", "reorder", "reformat", "cue_swap")
+GEN_PROMPT_VERSION = "gen-v2"
+JUDGE_PROMPT_VERSION = "judge-v2"
+# Tipos gerados pelo LLM, por tipo de cartão. `sem_imagem` não aparece aqui: é determinística e entra no `pack`.
+VARIANT_TYPES = {"basic": ("paraphrase", "reorder", "reformat", "cue_swap"), "cloze": ("pergunta",)}
 
 GEN_SYSTEM = """Você gera variantes de flashcards para um estudo que mede se alguém memorizou a FORMA do cartão em vez do conceito.
 Você recebe o cartão (pergunta e resposta esperada) e devolve variantes da PERGUNTA que mudam só a forma.
@@ -26,10 +27,24 @@ Tipos (gere exatamente um de cada):
 - reformat: mude o formato (por exemplo, afirmação com lacuna no lugar da resposta, ou pergunta aberta).
 - cue_swap: troque ou remova as palavras iniciais e as pistas superficiais mantendo o sentido; não comece com as mesmas 3 palavras do original.
 
-Se o cartão for do tipo cloze, a pergunta é uma frase com a lacuna "[...]". Cada variante deve ser então uma frase com exatamente uma ocorrência de "[...]" no lugar da resposta.
-
 Responda somente com JSON, sem texto extra:
 {"conceptual": true, "reason": "...", "variants": [{"type": "paraphrase", "text": "..."}, {"type": "reorder", "text": "..."}, {"type": "reformat", "text": "..."}, {"type": "cue_swap", "text": "..."}]}"""
+
+GEN_SYSTEM_CLOZE = """Você gera variantes de flashcards para um estudo que mede se alguém memorizou a FORMA do cartão em vez do conteúdo.
+O cartão é uma "ficha" com lacunas: um texto (por exemplo, título, subtítulo e linhas "rótulo: lacuna") com uma ou mais lacunas ocultas ao mesmo tempo, marcadas como [...] (se há uma) ou [...1], [...2], [...3] (se há várias). Você recebe o texto, a resposta esperada de cada marcador e se o cartão tem uma imagem ilustrativa (que será mantida e não aparece aqui).
+Devolva UMA variante no estilo "pergunta": reescreva o cartão como perguntas diretas, em que cada marcador fica no lugar da resposta da pergunta correspondente.
+
+Regras (mundo fechado):
+1. Cada marcador aparece exatamente uma vez, escrito exatamente como no original, e na mesma ordem do original. A resposta esperada de cada marcador é exatamente a do cartão.
+2. Use só o que o cartão diz. O título, o subtítulo e os rótulos entram nas perguntas como contexto. Não use conhecimento externo, não acrescente fatos nem exigências e não retire o contexto necessário para responder.
+3. Nenhuma pergunta pode conter nem entregar as respostas esperadas (de nenhum marcador).
+4. Mantenha o idioma e o nível de dificuldade do cartão.
+5. A variante deve ser claramente diferente do original: perguntas completas em vez de rótulos soltos, com estrutura e palavras diferentes.
+6. Escreva uma pergunta por linha (separe as linhas com "\\n"), cada uma terminando em "?" e com o marcador no lugar da resposta (uma pergunta pode ter mais de um marcador). Não use HTML nem Markdown.
+7. Se o cartão não for conceitual (vocabulário, número, data, lista ordenada, sigla sem contexto), se o texto sozinho não permitir uma pergunta fiel a estas regras ou se parecer depender da imagem para ser respondido, responda conceptual=false e variants=[].
+
+Responda somente com JSON, sem texto extra:
+{"conceptual": true, "reason": "...", "variants": [{"type": "pergunta", "text": "..."}]}"""
 
 JUDGE_SYSTEM = """Você audita variantes de flashcards. Recebe o cartão original (pergunta e resposta esperada) e uma variante da pergunta.
 Responda somente com JSON, sem texto extra:
@@ -42,14 +57,32 @@ Responda somente com JSON, sem texto extra:
 - same_question: a variante pergunta a mesma coisa que o original?
 Seja rigoroso."""
 
+JUDGE_SYSTEM_CLOZE = """Você audita variantes de flashcards do tipo ficha com lacunas. Recebe o cartão original (texto com marcadores [...] ou [...1], [...2], [...3] e a resposta esperada de cada marcador) e uma variante em forma de perguntas, com os mesmos marcadores.
+Responda somente com JSON, sem texto extra:
+{"answer_preserved": true, "ambiguous": false, "leaks_answer": false, "same_language": true, "same_question": true, "comment": "..."}
+
+- answer_preserved: para CADA marcador, a resposta esperada responde correta e completamente à pergunta em que o marcador aparece na variante?
+- ambiguous: alguma pergunta admite outra resposta plausível e correta, diferente da esperada para o marcador?
+- leaks_answer: a variante contém ou entrega, fora dos marcadores, alguma das respostas esperadas?
+- same_language: a variante está no mesmo idioma do original?
+- same_question: para cada marcador, a variante pergunta o mesmo que o original (mesmo assunto e mesmo aspecto), sem acrescentar nem perder exigências?
+Seja rigoroso."""
+
 
 def card_payload(card: Card) -> dict[str, Any]:
+    if card.kind == "cloze":
+        return {
+            "kind": "cloze",
+            "text": card.question_text,
+            "blanks": [{"marker": m, "answer": a} for m, a in zip(card.markers, card.answers_text)],
+            "has_image": bool(card.images_html),
+        }
     return {"kind": card.kind, "question": card.question_text, "answer": card.answer_text}
 
 
 def build_generation_messages(card: Card) -> list[dict[str, str]]:
     return [
-        {"role": "system", "content": GEN_SYSTEM},
+        {"role": "system", "content": GEN_SYSTEM_CLOZE if card.kind == "cloze" else GEN_SYSTEM},
         {"role": "user", "content": json.dumps(card_payload(card), ensure_ascii=False)},
     ]
 
@@ -57,6 +90,6 @@ def build_generation_messages(card: Card) -> list[dict[str, str]]:
 def build_judge_messages(card: Card, variant_text: str) -> list[dict[str, str]]:
     payload = {**card_payload(card), "variant": variant_text}
     return [
-        {"role": "system", "content": JUDGE_SYSTEM},
+        {"role": "system", "content": JUDGE_SYSTEM_CLOZE if card.kind == "cloze" else JUDGE_SYSTEM},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]

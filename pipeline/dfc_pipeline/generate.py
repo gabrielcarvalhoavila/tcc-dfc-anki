@@ -12,14 +12,15 @@ from .util import append_jsonl, as_bool, now_iso, read_jsonl, sha1_short, write_
 
 
 def clean_variants(card: Card, raw: Any) -> list[dict[str, str]]:
-    """Mantém no máximo uma variante por tipo conhecido, com texto não vazio."""
+    """Mantém no máximo uma variante por tipo conhecido do tipo de cartão, com texto não vazio."""
+    allowed = VARIANT_TYPES.get(card.kind, ())
     seen: dict[str, str] = {}
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
             continue
         t = str(item.get("type", "")).strip().lower()
         text = str(item.get("text", "")).strip()
-        if t in VARIANT_TYPES and text and t not in seen:
+        if t in allowed and text and t not in seen:
             seen[t] = text
     return [{"variant_id": f"{card.note_id}-{t}-{sha1_short(text, 6)}", "type": t, "text": text} for t, text in seen.items()]
 

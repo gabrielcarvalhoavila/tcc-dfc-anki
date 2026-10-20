@@ -44,12 +44,49 @@ class CardsTest(unittest.TestCase):
         self.assertIn("model_not_supported", cards.parse_note(ac_note(1, "Q", "A longa", model="Basic (type in the answer)")).reasons)
 
     def test_cloze_single_and_multi(self):
-        one = {"noteId": 2, "modelName": "Omissão de Palavras", "fields": {"Texto": {"value": "O {{c1::TCP}} é confiável", "order": 0}, "Extra": {"value": "", "order": 1}}}
+        one = {"noteId": 2, "modelName": "Omissão de Palavras", "fields": {"Texto": {"value": "O {{c1::TCP}} é um protocolo de transporte confiável", "order": 0}, "Extra": {"value": "", "order": 1}}}
         c = cards.parse_note(one)
-        self.assertEqual((c.kind, c.ords, c.question_text, c.answer_text), ("cloze", [0], "O [...] é confiável", "TCP"))
+        self.assertEqual((c.kind, c.ords, c.question_text, c.answer_text, c.blanks), ("cloze", [0], "O [...] é um protocolo de transporte confiável", "TCP", 1))
         self.assertTrue(c.eligible)
-        many = {"noteId": 3, "modelName": "Cloze", "fields": {"Text": "{{c1::a}} e {{c1::b}}"}}
-        self.assertIn("multi_cloze", cards.parse_note(many).reasons)
+        several_cards = {"noteId": 3, "modelName": "Cloze", "fields": {"Text": "{{c1::a}} e {{c2::b}} são as duas primeiras letras do alfabeto"}}
+        self.assertIn("multi_cloze", cards.parse_note(several_cards).reasons)  # vários cartões por nota
+        two_fields = {"noteId": 8, "modelName": "Cloze", "fields": {"Text": "O {{c1::TCP}} é um protocolo de transporte confiável", "Extra": "{{c1::UDP}} não"}}
+        self.assertIn("multi_cloze", cards.parse_note(two_fields).reasons)
+
+    def test_cloze_with_several_blanks_in_the_same_card(self):
+        text = "Governo Mussolini<br>Tratado de Latrão<br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}<br>Medida: {{c1::indenização à Igreja}}"
+        c = cards.parse_note({"noteId": 5, "modelName": "Cloze", "fields": {"Text": text}})
+        self.assertEqual((c.blanks, c.markers, c.ords), (3, ["[...1]", "[...2]", "[...3]"], [0]))
+        self.assertEqual(c.answers_text, ["Questão Romana", "reconhecimento do Vaticano", "indenização à Igreja"])
+        self.assertEqual(c.answer_text, "1: Questão Romana | 2: reconhecimento do Vaticano | 3: indenização à Igreja")
+        self.assertIn("Antecedentes: [...1]", c.question_text)
+        self.assertTrue(c.eligible, c.reasons)
+        four = cards.parse_note({"noteId": 5, "modelName": "Cloze", "fields": {"Text": text + "<br>Mais: {{c1::quarta}}"}})
+        self.assertEqual((four.blanks, four.reasons), (4, ["too_many_blanks"]))
+
+    def test_cloze_image_is_kept_and_other_media_still_block(self):
+        base = 'Mrs Dalloway<br><div><img src="d.png"></div><br>Personagens<br>Lucrezia é a: {{c1::esposa}}<br>Que sofre com: {{c1::trauma}}'
+        c = cards.parse_note({"noteId": 6, "modelName": "Cloze", "fields": {"Text": base}})
+        self.assertTrue(c.eligible, c.reasons)
+        self.assertEqual(c.images_html, ['<img src="d.png">'])
+        self.assertNotIn("img", c.question_text)
+        self.assertIn("media_or_latex", cards.parse_note({"noteId": 6, "modelName": "Cloze", "fields": {"Text": base + " \\(x^2\\)"}}).reasons)
+        self.assertIn("media_or_latex", cards.parse_note({"noteId": 6, "modelName": "Cloze", "fields": {"Text": base.replace("{{c1::esposa}}", "{{c1::<img src='r.png'>}}")}}).reasons)  # imagem na resposta
+
+    def test_cloze_needs_enough_visible_text_and_a_non_numeric_answer(self):
+        short = cards.parse_note({"noteId": 9, "modelName": "Cloze", "fields": {"Text": "Propulsa<br><img src='p.png'><br>fórmula: {{c1::F = m.a}}"}})
+        self.assertEqual(short.reasons, ["short_text"])  # a imagem seria o enunciado
+        numbers = cards.parse_note({"noteId": 9, "modelName": "Cloze", "fields": {"Text": "A Revolução Francesa começou em {{c1::1789}} e terminou em {{c1::1799}}"}})
+        self.assertEqual(numbers.reasons, ["numeric_answer"])
+        mixed = cards.parse_note({"noteId": 9, "modelName": "Cloze", "fields": {"Text": "A Revolução Francesa começou em {{c1::1789}} na {{c1::França}} de Luís XVI"}})
+        self.assertTrue(mixed.eligible, mixed.reasons)
+
+    def test_cards_jsonl_from_before_v1_2_still_loads(self):
+        old = cards.parse_note({"noteId": 2, "modelName": "Cloze", "fields": {"Text": "O {{c1::TCP}} é um protocolo de transporte confiável"}}).to_dict()
+        for key in ("blanks", "answers_html", "answers_text", "images_html"):
+            del old[key]
+        c = cards.Card.from_dict(old)
+        self.assertEqual((c.blanks, c.answers_html, c.answers_text, c.images_html), (1, ["TCP"], ["TCP"], []))
 
     def test_question_field_index_is_recorded(self):
         second = {"noteId": 4, "modelName": "Cloze", "fields": {"Extra": {"value": "", "order": 0}, "Text": {"value": "O {{c2::TCP}} é confiável", "order": 1}}}
@@ -169,6 +206,21 @@ class ValidateTest(unittest.TestCase):
         _, r, _ = validate.decide(c, {"type": "reformat", "text": "Protocolo de transporte confiável: [...] e [...]"}, {"answer_preserved": True})
         self.assertIn("cloze_placeholder", r)
 
+    def test_cloze_several_blanks_need_every_marker_once_in_order_and_a_question(self):
+        c = cards.parse_note({"noteId": 7, "modelName": "Cloze", "fields": {"Text": "Governo Mussolini<br>Tratado de Latrão<br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}"}})
+        good = "No governo Mussolini, quais foram os antecedentes do Tratado de Latrão? [...1]\nEm que consiste esse tratado? [...2]"
+        judge = {"answer_preserved": True}
+        ok, reasons, _ = validate.decide(c, {"type": "pergunta", "text": good}, judge)
+        self.assertTrue(ok, reasons)
+        for bad in (good.replace(" [...2]", ""), good + " [...1]", good.replace("[...1]", "[...2]")):
+            self.assertIn("cloze_placeholder", validate.decide(c, {"type": "pergunta", "text": bad}, judge)[1], bad)
+        swapped = "No governo Mussolini, em que consiste esse tratado? [...2]\nQuais foram os antecedentes do Tratado de Latrão? [...1]"
+        self.assertIn("cloze_placeholder", validate.decide(c, {"type": "pergunta", "text": swapped}, judge)[1])
+        statement = "No governo Mussolini, os antecedentes do Tratado de Latrão foram [...1] e o tratado consiste em [...2]."
+        self.assertEqual(validate.decide(c, {"type": "pergunta", "text": statement}, judge)[1], ["not_a_question"])
+        leaking = "Sobre a Questão Romana no governo Mussolini e o Tratado de Latrão: quais foram os antecedentes? [...1]\nEm que consiste? [...2]"
+        self.assertIn("leak_heuristic", validate.decide(c, {"type": "pergunta", "text": leaking}, judge)[1])
+
 
 class PipelineEndToEndTest(unittest.TestCase):
     def setUp(self):
@@ -222,7 +274,39 @@ class PipelineEndToEndTest(unittest.TestCase):
         total = sum(len(e["variants"]) for e in bank["notes"].values())
         self.assertEqual(total, 12 - 1)  # a variante rejeitada na auditoria sai
         self.assertEqual(bank["notes"]["1"]["kind"], "basic")
-        self.assertEqual((bank["schema"], bank["notes"]["1"]["q_field"]), (2, 0))
+        self.assertEqual((bank["schema"], bank["notes"]["1"]["q_field"]), (3, 0))
+
+    def test_cloze_ficha_with_image_gets_pergunta_and_sem_imagem(self):
+        text = 'Mrs Dalloway<br><div><img src="d.png"></div><br>Personagens<br>Lucrezia é a: {{c1::esposa de Septimus}}<br>Que sofre com: {{c1::o trauma da guerra}}'
+        ficha = cards.parse_note({"noteId": 10, "modelName": "Cloze", "fields": {"Text": text}, "decks": ["Leituras"]})
+        self.assertTrue(ficha.eligible, ficha.reasons)
+        generate.generate([ficha], FakeLLM(), self.p("g.jsonl"), log=lambda s: None)
+        gen = list(read_jsonl(self.p("g.jsonl")))
+        self.assertEqual([v["type"] for v in gen[0]["variants"]], ["pergunta"])  # o LLM só gera a pergunta; sem_imagem é determinística
+        validate.validate({10: ficha}, gen, FakeLLM(), self.p("v.jsonl"), log=lambda s: None)
+        val = list(read_jsonl(self.p("v.jsonl")))
+        self.assertTrue(val[0]["auto_valid"], val[0]["reasons"])
+        bank = pack.build_bank([ficha], gen, val, allow_fake=True)
+        entry = bank["notes"]["10"]
+        self.assertEqual((bank["schema"], entry["kind"], entry["answers_html"], entry["images_html"]), (3, "cloze", ["esposa de Septimus", "o trauma da guerra"], ['<img src="d.png">']))
+        self.assertEqual([v["type"] for v in entry["variants"]], ["pergunta", "sem_imagem"])
+        self.assertEqual(entry["variants"][1], {"id": "10-sem_imagem", "type": "sem_imagem"})
+
+        self.assertEqual(audit.build_sheet({10: ficha}, val, 2, 1, self.p("s.csv")), 2)
+        with open(self.p("s.csv"), newline="", encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+        self.assertEqual(sorted(r["type"] for r in rows), ["pergunta", "sem_imagem"])
+        self.assertIn("[...1]", rows[0]["original_question"])
+        for r in rows:
+            r["human_ok"] = "s" if r["type"] == "pergunta" else "n"  # sem a imagem a pergunta não se sustenta
+        with open(self.p("s.csv"), "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.DictWriter(f, fieldnames=audit.SHEET_COLUMNS)
+            w.writeheader()
+            w.writerows(rows)
+        report = audit.score_sheet(self.p("s.csv"), min_n=1, min_n_type=1)
+        self.assertEqual((report["exclude_types"], report["rejected_variant_ids"]), (["sem_imagem"], ["10-sem_imagem"]))
+        again = pack.build_bank([ficha], gen, val, audit_report=report, allow_fake=True)
+        self.assertEqual([v["type"] for v in again["notes"]["10"]["variants"]], ["pergunta"])
 
     def test_pack_skips_edited_notes(self):
         generate.generate(self.cards, FakeLLM(), self.p("gen.jsonl"), log=lambda s: None)

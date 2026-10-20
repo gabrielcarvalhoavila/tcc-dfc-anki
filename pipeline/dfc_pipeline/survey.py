@@ -63,13 +63,11 @@ def recent_cards(invoke: Callable[..., Any], days: int, since_ms: float, rollove
 
 
 def bucket(card: Optional[Card], ord_: int) -> str:
-    """Onde cai uma resposta: cartão que o add-on sortearia, ou os motivos de não cair (`so_multi_cloze`: só falta aceitar várias lacunas)."""
+    """Onde cai uma resposta: cartão que o add-on sortearia, ou os motivos de não cair."""
     if card is None:
         return "nota fora da busca"
     if card.eligible:
         return "sorteavel" if ord_ in card.ords else "outro cartao da nota"
-    if card.reasons == ["multi_cloze"]:
-        return "so_multi_cloze"
     return "+".join(card.reasons)
 
 
@@ -145,12 +143,8 @@ def report(cards: list[Card], recent: list[dict[str, Any]], days: int, window_da
     for (deck, kind), n in sorted(drawable.items(), key=lambda kv: -kv[1]["eventos"]):
         lines.append(f"{deck[:30]:30} {kind:8} {n['cartoes']:>8} {n['eventos']:>8} {n['suspeitos']:>10} {n['eventos'] - n['suspeitos']:>10}")
     scale = window_days / days
-    ok, multi = by_bucket["sorteavel"], by_bucket["so_multi_cloze"]
+    ok = by_bucket["sorteavel"]
     lines.append(f"na janela de {window_days} dias, se a rotina continuar igual: ~{round(ok['eventos'] * scale)} eventos (~{round(ok['suspeitos'] * scale)} suspeitos)")
-    lines.append(
-        f"se o protocolo aceitasse Cloze com varias lacunas (notas sem outro motivo): +{multi['eventos']} eventos (+{multi['suspeitos']} suspeitos) em {days} dias; "
-        f"na janela: ~{round((ok['eventos'] + multi['eventos']) * scale)} eventos (~{round((ok['suspeitos'] + multi['suspeitos']) * scale)} suspeitos)"
-    )
     return lines
 
 

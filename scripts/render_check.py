@@ -55,7 +55,7 @@ def check_note(col, adapter, variants, note_id, entry, count, fail):
     if orig_a not in reviewer_a:
         return fail(kind_model, "answer_mismatch", note_id)
     for variant in entry["variants"]:
-        value, needles = variants.field_value(entry, variant)
+        value, needles = variants.field_value(entry, variant, note.fields[entry["q_field"]])
         try:
             var_q, var_a = adapter.render_pair(col, card, entry["q_field"], value)
         except Exception as e:  # noqa: BLE001

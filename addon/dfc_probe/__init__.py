@@ -111,6 +111,15 @@ def _on_answered(reviewer, card, ease) -> None:
         _tracker.answered(card, ease)
 
 
+def _munge(text: str) -> str:
+    """O Reviewer escapa os nomes dos arquivos de mídia antes do gancho; o texto trocado precisa do mesmo tratamento para a troca por substring casar."""
+    for owner, name in ((mw, "prepare_card_text_for_display"), (getattr(mw.col, "media", None), "escape_media_filenames")):
+        fn = getattr(owner, name, None)
+        if callable(fn):
+            return fn(text)
+    return text
+
+
 def _prepare_exposure(p: dict, card) -> None:
     """Decide o braço da exposição e prepara pergunta e resposta com a variante (uma vez por exposição)."""
     extra, snap = p["extra"], p["snap"]
@@ -144,11 +153,11 @@ def _prepare_exposure(p: dict, card) -> None:
     if d.arm == "variant":
         extra.update(variant_id=d.variant["id"], variant_type=d.variant["type"])
         try:
-            value, needles = variants.field_value(entry, d.variant)
+            value, needles = variants.field_value(entry, d.variant, note.fields[entry["q_field"]])
             orig_q, orig_a = render_pair(mw.col, card)
             var_q, var_a = render_pair(mw.col, card, entry["q_field"], value)
             if var_q != orig_q and all(n in var_q for n in needles):
-                p["render"] = {"orig_q": orig_q, "var_q": var_q, "orig_a": orig_a, "var_a": var_a}
+                p["render"] = {"orig_q": _munge(orig_q), "var_q": _munge(var_q), "orig_a": _munge(orig_a), "var_a": _munge(var_a)}
             else:
                 extra.update(shown_ok=0, draw_note="render_failed")
         except Exception:

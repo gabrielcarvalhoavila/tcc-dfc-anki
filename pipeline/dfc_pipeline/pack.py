@@ -41,13 +41,18 @@ def build_bank(
             judges.add(ver.get("judge_model"))
         if not variants:
             continue
+        sem_imagem_id = f"{card.note_id}-sem_imagem"
+        if card.kind == "cloze" and card.images_html and "sem_imagem" not in excluded and sem_imagem_id not in rejected:
+            variants.append({"id": sem_imagem_id, "type": "sem_imagem"})  # o texto sozinho gerou uma pergunta válida: a imagem é ilustrativa
         generators.add(g["generator"]["model"])
         entry: dict[str, Any] = {"kind": card.kind, "ords": card.ords, "q_field": card.q_field, "fields_hash": card.fields_hash, "variants": variants}
         if card.kind == "cloze":
-            entry["answer_html"] = card.answer_html
+            entry["answers_html"] = card.answers_html
+            if card.images_html:
+                entry["images_html"] = card.images_html
         notes[str(card.note_id)] = entry
     return {
-        "schema": 2,
+        "schema": 3,
         "generated_at": now_iso(),
         "generator_models": sorted(generators),
         "judge_models": sorted(j for j in judges if j),

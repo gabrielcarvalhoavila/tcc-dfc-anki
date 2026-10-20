@@ -7,12 +7,17 @@ import hmac
 import html
 import json
 import random
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
 PLACEHOLDER = "[...]"
 VARIANT_PROBABILITY = 0.5
-SUPPORTED_SCHEMAS = (1, 2)
+SUPPORTED_SCHEMAS = (1, 2, 3)
+MAX_BLANKS = 3  # lacunas ocultas ao mesmo tempo no cartão Cloze (protocolo v1.2)
+BLANK_RE = re.compile(r"\[\.\.\.\d*\]")
+IMG_RE = re.compile(r"<img\b[^>]*>", re.I)
+SRC_RE = re.compile(r"""\bsrc\s*=\s*["']([^"'&]+)["']""", re.I)
 
 
 def sha1_short(text: str, n: int = 12) -> str:
@@ -24,11 +29,19 @@ def fields_hash(fields: list[str]) -> str:
     return sha1_short("\x1f".join(fields), 12)
 
 
-def usable_text(kind: str, text: str) -> bool:
-    """Texto que o add-on aceita mostrar: sem marcas de template e, em Cloze, com uma única lacuna."""
+def blank_markers(n: int) -> list[str]:
+    """Marcadores das lacunas no texto da variante: `[...]` se há uma, `[...1]`, `[...2]`... se há várias."""
+    return [PLACEHOLDER] if n == 1 else [f"[...{i}]" for i in range(1, n + 1)]
+
+
+def usable_text(kind: str, text: str, blanks: int = 1) -> bool:
+    """Texto que o add-on aceita mostrar: sem marcas de template e, em Cloze, cada marcador de lacuna exatamente uma vez."""
     if not text.strip() or "{{" in text or "}}" in text:
         return False
-    return kind != "cloze" or text.count(PLACEHOLDER) == 1
+    if kind != "cloze":
+        return True
+    markers = blank_markers(blanks)
+    return len(BLANK_RE.findall(text)) == len(markers) and all(text.count(m) == 1 for m in markers)
 
 
 def _clean_entry(e: Any) -> Optional[dict[str, Any]]:
@@ -37,22 +50,38 @@ def _clean_entry(e: Any) -> Optional[dict[str, Any]]:
     ords, fh = e.get("ords"), e.get("fields_hash")
     if not (isinstance(ords, list) and ords and all(isinstance(o, int) for o in ords) and isinstance(fh, str)):
         return None
-    if e["kind"] == "cloze" and not isinstance(e.get("answer_html"), str):
-        return None
+    answers: list[str] = []
+    images: list[str] = []
+    if e["kind"] == "cloze":
+        raw = e.get("answers_html")
+        if raw is None and isinstance(e.get("answer_html"), str):  # schemas 1 e 2: uma lacuna
+            raw = [e["answer_html"]]
+        if not (isinstance(raw, list) and 1 <= len(raw) <= MAX_BLANKS and all(isinstance(a, str) and a for a in raw)):
+            return None
+        answers = raw
+        imgs = e.get("images_html") or []
+        if not (isinstance(imgs, list) and all(isinstance(i, str) and i for i in imgs)):
+            return None
+        images = imgs
     try:
         q_field = int(e.get("q_field", 0))
     except (TypeError, ValueError):
         return None
-    variants = [
-        {"id": v["id"], "type": v["type"], "text": v["text"]}
-        for v in e.get("variants") or []
-        if isinstance(v, dict) and all(isinstance(v.get(k), str) and v[k] for k in ("id", "type", "text")) and usable_text(e["kind"], v["text"])
-    ]
+    variants = []
+    for v in e.get("variants") or []:
+        if not (isinstance(v, dict) and all(isinstance(v.get(k), str) and v[k] for k in ("id", "type"))):
+            continue
+        if v["type"] == "sem_imagem":  # sem texto: o add-on tira as imagens do campo; só faz sentido se há imagem
+            if images:
+                variants.append({"id": v["id"], "type": "sem_imagem"})
+        elif isinstance(v.get("text"), str) and usable_text(e["kind"], v["text"], len(answers) or 1):
+            variants.append({"id": v["id"], "type": v["type"], "text": v["text"]})
     if not variants:
         return None
     out: dict[str, Any] = {"kind": e["kind"], "ords": ords, "fields_hash": fh, "q_field": q_field, "variants": variants}
     if e["kind"] == "cloze":
-        out["answer_html"] = e["answer_html"]
+        out["answers_html"] = answers
+        out["images_html"] = images
     return out
 
 
@@ -180,12 +209,23 @@ def _esc(text: str) -> str:
     return html.escape(text, quote=True).replace("\r\n", "\n").replace("\n", "<br>")
 
 
-def field_value(entry: dict[str, Any], variant: dict[str, Any]) -> tuple[str, list[str]]:
-    """HTML do campo da pergunta com a variante, e os trechos que precisam aparecer na pergunta renderizada."""
+def field_value(entry: dict[str, Any], variant: dict[str, Any], current_field: Optional[str] = None) -> tuple[str, list[str]]:
+    """HTML do campo da pergunta com a variante, e os trechos que precisam aparecer na pergunta renderizada.
+
+    `sem_imagem` parte do campo atual da nota (`current_field`) e só tira as imagens; `pergunta` reescreve o texto e põe as imagens originais no topo.
+    """
+    if variant["type"] == "sem_imagem":
+        return IMG_RE.sub("", current_field or ""), []
     text = variant["text"]
-    if entry["kind"] == "cloze":
-        before, _, after = text.partition(PLACEHOLDER)
-        number = entry["ords"][0] + 1
-        value = _esc(before) + "{{c%d::" % number + entry["answer_html"] + "}}" + _esc(after)
-        return value, [s for s in (_esc(before).strip(), _esc(after).strip()) if s]
-    return _esc(text), [_esc(text)]
+    if entry["kind"] != "cloze":
+        return _esc(text), [_esc(text)]
+    number = entry["ords"][0] + 1
+    answers = entry["answers_html"]
+    body = _esc(text)
+    for marker, answer in zip(blank_markers(len(answers)), answers):
+        body = body.replace(marker, "{{c%d::%s}}" % (number, answer), 1)
+    images = entry.get("images_html") or []
+    top = '<div style="text-align: center;">' + "".join(images) + "</div>" if images else ""
+    pieces = [_esc(line).strip() for line in BLANK_RE.sub("\n", text).split("\n")]
+    sources = [m.group(1) for img in images for m in [SRC_RE.search(img)] if m]
+    return top + body, [p for p in pieces if p] + sources

@@ -86,7 +86,7 @@ class RealRenderTest(unittest.TestCase):
 
     def test_cloze_variant_keeps_the_blank_and_the_extra_field(self):
         note, card = self.cloze()
-        entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answer_html": "ferro", "variants": []}
+        entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["ferro"], "variants": []}
         variant = {"id": "v2", "type": "reorder", "text": "Protoporfirina e [...] formam o heme."}
         value, needles = self.variants.field_value(entry, variant)
         var_q, var_a = self.adapter.render_pair(self.col, card, 0, value)
@@ -116,6 +116,46 @@ class RealRenderTest(unittest.TestCase):
             "tags": [],
         }
         self.assertEqual(parse_note(rec).fields_hash, self.variants.fields_hash(note.fields))
+
+    FICHA = 'Governo Mussolini<br><div><img src="d.png"></div><br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}'
+    FICHA_ENTRY = {
+        "kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["Questão Romana", "reconhecimento do Vaticano"],
+        "images_html": ['<img src="d.png">'], "variants": [],
+    }
+
+    def ficha(self):
+        note = self.add("Cloze", Text=self.FICHA, **{"Back Extra": "Pacto de 1929"})
+        return note, note.cards()[0]
+
+    def test_pergunta_variant_keeps_the_image_and_both_blanks_of_a_ficha(self):
+        note, card = self.ficha()
+        variant = {"id": "v", "type": "pergunta", "text": "No governo Mussolini, quais foram os antecedentes do tratado? [...1]\nEm que consistiu o tratado? [...2]"}
+        value, needles = self.variants.field_value(self.FICHA_ENTRY, variant, note.fields[0])
+        orig_q, orig_a = self.adapter.render_pair(self.col, card)
+        var_q, var_a = self.adapter.render_pair(self.col, card, 0, value)
+        self.assertTrue(all(n in var_q for n in needles), needles)  # o texto novo e a imagem original
+        self.assertEqual((orig_q.count('class="cloze"'), var_q.count('class="cloze"')), (2, 2))
+        visible = re.sub(r"<[^>]+>", "", var_q)
+        self.assertNotIn("Questão Romana", visible)  # as respostas continuam ocultas na pergunta
+        self.assertNotIn("Vaticano", visible)
+        for shown in ("Questão Romana", "reconhecimento do Vaticano", "Pacto de 1929"):
+            self.assertIn(shown, var_a)  # a resposta revela as duas lacunas e o Back Extra do template real
+        self.assertNotIn("Antecedentes:", var_q + var_a)  # o molde de rótulos saiu
+        self.assertEqual(self.col.get_note(note.id)["Text"], self.FICHA)  # nada foi gravado
+
+    def test_sem_imagem_variant_removes_only_the_image(self):
+        note, card = self.ficha()
+        value, needles = self.variants.field_value(self.FICHA_ENTRY, {"id": "1-sem_imagem", "type": "sem_imagem"}, note.fields[0])
+        orig_q, _ = self.adapter.render_pair(self.col, card)
+        var_q, var_a = self.adapter.render_pair(self.col, card, 0, value)
+        self.assertEqual(needles, [])
+        self.assertIn("d.png", orig_q)
+        self.assertNotIn("d.png", var_q)
+        self.assertNotEqual(var_q, orig_q)
+        for kept in ("Governo Mussolini", "Antecedentes:", "Consiste:"):
+            self.assertIn(kept, var_q)
+        self.assertEqual(var_q.count('class="cloze"'), 2)
+        self.assertEqual(self.col.get_note(note.id)["Text"], self.FICHA)
 
 
 @unittest.skipUnless(HAS_ANKI, "pacote anki não instalado (opcional)")
@@ -178,7 +218,7 @@ class RealHooksTest(unittest.TestCase):
         user_files = os.environ["DFC_PROBE_USER_FILES"]
         os.makedirs(user_files, exist_ok=True)
         with open(os.path.join(user_files, "variant_bank.json"), "w", encoding="utf-8") as f:
-            json.dump({"schema": 2, "notes": entries}, f)
+            json.dump({"schema": 3, "notes": entries}, f)
         self.mod = importlib.import_module("dfc_probe")
         self.mod.variants.VARIANT_PROBABILITY = 1.0
 
@@ -208,10 +248,11 @@ class RealHooksTest(unittest.TestCase):
         )
 
     def study(self, card, ease=3):
-        original_q = card.question()
+        munge = self.col.media.escape_media_filenames  # o Reviewer faz isso com o texto antes do gancho (_mungeQA)
+        original_q = munge(card.question())
         shown_q = self.hooks.card_will_show[0](original_q, card, "reviewQuestion")
         self.hooks.reviewer_did_show_question[0](card)
-        shown_a = self.hooks.card_will_show[0](card.answer(), card, "reviewAnswer")
+        shown_a = self.hooks.card_will_show[0](munge(card.answer()), card, "reviewAnswer")
         self.hooks.reviewer_did_show_answer[0](card)
         self.hooks.reviewer_did_answer_card[0](None, card, ease)
         return original_q, shown_q, shown_a
@@ -287,13 +328,38 @@ class RealHooksTest(unittest.TestCase):
         first, again = self.mod._store.rows()
         self.assertEqual((again["draw_note"], again["variant_id"], again["draw_seed"]), ("undo_redo", first["variant_id"], first["draw_seed"]))
 
+    def test_image_filenames_escaped_by_the_reviewer_do_not_break_the_swap(self):
+        text = 'Governo Mussolini<br><img src="Imagem ação 1.png"><br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}'
+        entry = {
+            "kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["Questão Romana", "reconhecimento do Vaticano"], "images_html": ['<img src="Imagem ação 1.png">'],
+            "variants": [{"id": "x-pergunta", "type": "pergunta", "text": "Quais foram os antecedentes do tratado? [...1]\nEm que consiste? [...2]"}],
+        }
+        notes = []
+        for _ in range(2):
+            note = self.col.new_note(self.col.models.by_name("Cloze"))
+            note["Text"] = text
+            self.col.add_note(note, 1)
+            notes.append(note)
+        cards = [self.age(n) for n in notes]
+        self.load_addon({n: entry for n in notes})
+        original_q, shown_q, _ = self.study(cards[0])
+        self.assertIn("Imagem%20ação%201.png", original_q)  # o Reviewer escapa o nome do arquivo (IRI: espaço vira %20)
+        self.assertIn("Quais foram os antecedentes do tratado?", shown_q)
+        self.assertIn("Imagem%20ação%201.png", shown_q)  # imagem mantida, com o mesmo escape
+        self.assertEqual((self.mod._store.rows()[0]["variant_type"], self.mod._store.rows()[0]["shown_ok"]), ("pergunta", 1))
+        self.mod._munge = lambda t: t  # sem o escape a troca por substring não casa e o add-on mostra o original
+        original_q2, shown_q2, _ = self.study(cards[1])
+        self.assertEqual(shown_q2, original_q2)
+        second = self.mod._store.rows()[1]
+        self.assertEqual((second["shown_ok"], second["draw_note"]), (0, "template_mismatch"))
+
     def test_cloze_variant_on_a_real_cloze_note(self):
         note = self.col.new_note(self.col.models.by_name("Cloze"))
         note["Text"], note["Back Extra"] = "O heme é formado por protoporfirina e {{c1::ferro}}.", "Fe2+"
         self.col.add_note(note, 1)
         card = self.age(note)
         entry = {
-            "kind": "cloze", "ords": [0], "q_field": 0, "answer_html": "ferro",
+            "kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["ferro"],
             "variants": [{"id": "c-1", "type": "reorder", "text": "Protoporfirina e [...] formam o heme."}],
         }
         self.load_addon({note: entry})
@@ -305,6 +371,31 @@ class RealHooksTest(unittest.TestCase):
         self.assertIn("Fe2+", shown_a)
         (row,) = self.mod._store.rows()
         self.assertEqual((row["arm"], row["shown_ok"]), ("variant", 1))
+
+    def test_ficha_pergunta_and_sem_imagem_through_the_real_hooks(self):
+        ficha = 'Governo Mussolini<br><div><img src="d.png"></div><br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}'
+        notes = {}
+        for kind in ("pergunta", "sem_imagem"):
+            note = self.col.new_note(self.col.models.by_name("Cloze"))
+            note["Text"], note["Back Extra"] = ficha, "Pacto de 1929"
+            self.col.add_note(note, 1)
+            variant = {"id": f"{note.id}-{kind}", "type": kind}
+            if kind == "pergunta":
+                variant["text"] = "No governo Mussolini, quais foram os antecedentes do tratado? [...1]\nEm que consistiu o tratado? [...2]"
+            entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["Questão Romana", "reconhecimento do Vaticano"], "images_html": ['<img src="d.png">'], "variants": [variant]}
+            notes[kind] = (note, entry)
+        cards = {kind: self.age(note) for kind, (note, _) in notes.items()}
+        self.load_addon({note: entry for note, entry in notes.values()})
+        _, q_pergunta, a_pergunta = self.study(cards["pergunta"])
+        _, q_sem, a_sem = self.study(cards["sem_imagem"])
+        self.assertIn("quais foram os antecedentes do tratado?", q_pergunta)
+        self.assertIn("d.png", q_pergunta)  # a imagem original continua
+        self.assertNotIn("Antecedentes:", q_pergunta + a_pergunta)  # o molde de rótulos saiu nos dois lados
+        self.assertIn("Pacto de 1929", a_pergunta)
+        self.assertNotIn("d.png", q_sem + a_sem)  # sem imagem nos dois lados
+        self.assertIn("Antecedentes:", q_sem)
+        rows = self.mod._store.rows()
+        self.assertEqual([(r["variant_type"], r["shown_ok"], r["draw_note"]) for r in rows], [("pergunta", 1, "ok"), ("sem_imagem", 1, "ok")])
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import time
 from collections import Counter
 from typing import Any, Callable, Optional
 
-from .cards import Card, PLACEHOLDER
+from .cards import BLANK_RE, Card
 from .llm import LLMError, parse_json_loose
 from .prompts import JUDGE_PROMPT_VERSION, build_judge_messages
 from .util import append_jsonl, as_bool, now_iso, read_jsonl, tokens, write_jsonl
@@ -43,19 +43,33 @@ def leak_ratio(question: str, answer: str, variant: str) -> float:
     return sum(t in v for t in ans) / len(ans)
 
 
+def markers_ok(card: Card, text: str) -> bool:
+    """Cloze: cada marcador esperado aparece uma vez (na ordem do original, se são vários), sem outros marcadores nem marcas de template."""
+    if "{{" in text or "}}" in text or len(BLANK_RE.findall(text)) != len(card.markers):
+        return False
+    if any(text.count(m) != 1 for m in card.markers):
+        return False
+    pos = [text.index(m) for m in card.markers]
+    return pos == sorted(pos)
+
+
 def decide(card: Card, variant: dict[str, str], judge: Optional[dict[str, Any]], *, min_distance: float = MIN_DISTANCE, leak_max: float = LEAK_MAX) -> tuple[bool, list[str], dict[str, float]]:
     text = variant["text"]
     reasons: list[str] = []
-    dist = jaccard_distance(card.question_text, text)
-    lr = leak_ratio(card.question_text, card.answer_text, text)
+    question, plain = BLANK_RE.sub(" ", card.question_text), BLANK_RE.sub(" ", text)
+    dist = jaccard_distance(question, plain)
+    lr = max(leak_ratio(question, a, plain) for a in (card.answers_text if card.kind == "cloze" else [card.answer_text]))
     if dist < min_distance:
         reasons.append("too_similar")
     if variant["type"] == "cue_swap" and not first_words_differ(card.question_text, text):
         reasons.append("same_start")
     if lr >= leak_max:
         reasons.append("leak_heuristic")
-    if card.kind == "cloze" and text.count(PLACEHOLDER) != 1:
-        reasons.append("cloze_placeholder")
+    if card.kind == "cloze":
+        if not markers_ok(card, text):
+            reasons.append("cloze_placeholder")
+        if variant["type"] == "pergunta" and "?" not in text:
+            reasons.append("not_a_question")
     if judge is None:
         reasons.append("judge_error")
     else:

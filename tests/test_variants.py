@@ -123,7 +123,7 @@ class BankTest(unittest.TestCase):
         self.assertEqual(V.Bank.from_bytes(self.bank_json({"1": old}, schema=1)).entry(1)["q_field"], 0)
 
     def test_rejects_other_files(self):
-        for raw in (b"nao e json", b'{"schema": 3, "notes": {}}', b'["x"]', b'{"schema": 2}'):
+        for raw in (b"nao e json", b'{"schema": 4, "notes": {}}', b'["x"]', b'{"schema": 2}'):
             with self.assertRaises(ValueError):
                 V.Bank.from_bytes(raw)
 
@@ -140,6 +140,33 @@ class BankTest(unittest.TestCase):
         self.assertFalse(V.usable_text("cloze", "[...] e [...]"))
         self.assertTrue(V.usable_text("cloze", "uma [...] só"))
         self.assertTrue(V.usable_text("basic", "O que é NAT?"))
+        self.assertTrue(V.usable_text("cloze", "Quais? [...1]\nE então? [...2]", 2))
+        self.assertFalse(V.usable_text("cloze", "Quais? [...1]", 2))  # falta o marcador 2
+        self.assertFalse(V.usable_text("cloze", "Quais? [...1] [...2] [...2]", 2))
+        self.assertFalse(V.usable_text("cloze", "Quais? [...]", 2))  # com duas lacunas os marcadores são numerados
+
+    def test_schema_3_cloze_entries_with_several_blanks_images_and_sem_imagem(self):
+        ficha = {
+            "kind": "cloze", "ords": [0], "q_field": 0, "fields_hash": "f", "answers_html": ["A", "B"], "images_html": ['<img src="d.png">'],
+            "variants": [
+                {"id": "1-pergunta-aa", "type": "pergunta", "text": "Quais? [...1]\nE então? [...2]"},
+                {"id": "1-sem_imagem", "type": "sem_imagem"},
+                {"id": "1-ruim", "type": "pergunta", "text": "Só uma? [...1]"},
+            ],
+        }
+        no_image = {**ficha, "images_html": [], "variants": ficha["variants"][:2]}  # sem imagem não há o que tirar
+        too_many = {**ficha, "answers_html": ["A", "B", "C", "D"]}
+        bank = V.Bank.from_bytes(self.bank_json({"1": ficha, "2": no_image, "3": too_many, "4": {**ficha, "answers_html": []}}, schema=3))
+        self.assertEqual((sorted(bank.notes), bank.skipped), ([1, 2], 2))
+        self.assertEqual([(v["type"], "text" in v) for v in bank.entry(1)["variants"]], [("pergunta", True), ("sem_imagem", False)])
+        self.assertEqual((bank.entry(1)["answers_html"], bank.entry(1)["images_html"]), (["A", "B"], ['<img src="d.png">']))
+        self.assertEqual([v["type"] for v in bank.entry(2)["variants"]], ["pergunta"])
+        self.assertEqual(bank.n_variants, 3)
+
+    def test_schema_2_cloze_entry_is_read_as_one_blank(self):
+        old = {"kind": "cloze", "ords": [0], "q_field": 0, "fields_hash": "f", "answer_html": "TCP", "variants": [{"id": "c", "type": "reorder", "text": "É [...] confiável"}]}
+        entry = V.Bank.from_bytes(self.bank_json({"1": old})).entry(1)
+        self.assertEqual((entry["answers_html"], entry["images_html"]), (["TCP"], []))
 
     def test_bank_built_by_the_pipeline_loads_in_the_addon(self):
         from dfc_pipeline import cards, generate, pack, validate
@@ -148,7 +175,7 @@ class BankTest(unittest.TestCase):
 
         recs = [
             {"noteId": 1, "modelName": "Basic", "fields": {"Front": {"value": "O que é NAT?", "order": 0}, "Back": {"value": "Tradução de endereços de rede", "order": 1}}},
-            {"noteId": 2, "modelName": "Cloze", "fields": {"Extra": {"value": "", "order": 0}, "Text": {"value": "O {{c1::TCP}} é confiável", "order": 1}}},
+            {"noteId": 2, "modelName": "Cloze", "fields": {"Extra": {"value": "", "order": 0}, "Text": {"value": "O {{c1::TCP}} é um protocolo de transporte confiável", "order": 1}}},
         ]
         parsed = [cards.parse_note(r) for r in recs]
         with tempfile.TemporaryDirectory() as tmp:
@@ -160,7 +187,7 @@ class BankTest(unittest.TestCase):
         bank = V.Bank.from_bytes(raw)
         self.assertEqual(sorted(bank.notes), [1, 2])
         self.assertEqual((bank.entry(1)["kind"], bank.entry(1)["q_field"]), ("basic", 0))
-        self.assertEqual((bank.entry(2)["kind"], bank.entry(2)["q_field"], bank.entry(2)["answer_html"]), ("cloze", 1, "TCP"))
+        self.assertEqual((bank.entry(2)["kind"], bank.entry(2)["q_field"], bank.entry(2)["answers_html"]), ("cloze", 1, ["TCP"]))
         self.assertEqual(bank.skipped, 0)
 
 
@@ -171,15 +198,32 @@ class TextTest(unittest.TestCase):
         self.assertEqual(needles, [value])
 
     def test_cloze_value_places_the_blank_with_the_original_number(self):
-        entry = {"kind": "cloze", "ords": [1], "q_field": 0, "answer_html": "ferro", "fields_hash": "f", "variants": []}
+        entry = {"kind": "cloze", "ords": [1], "q_field": 0, "answers_html": ["ferro"], "fields_hash": "f", "variants": []}
         value, needles = V.field_value(entry, {"id": "v", "type": "t", "text": "Protoporfirina e [...] formam o heme."})
         self.assertEqual(value, "Protoporfirina e {{c2::ferro}} formam o heme.")
         self.assertEqual(needles, ["Protoporfirina e", "formam o heme."])
 
     def test_cloze_blank_at_the_edges(self):
-        entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answer_html": "ferro", "fields_hash": "f", "variants": []}
+        entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["ferro"], "fields_hash": "f", "variants": []}
         value, needles = V.field_value(entry, {"id": "v", "type": "t", "text": "[...] forma o heme."})
         self.assertEqual((value, needles), ("{{c1::ferro}} forma o heme.", ["forma o heme."]))
+
+    def test_pergunta_with_several_blanks_puts_the_original_images_on_top(self):
+        entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["Questão Romana", "<b>Vaticano</b>"], "images_html": ['<img src="d.png">'], "fields_hash": "f", "variants": []}
+        variant = {"id": "v", "type": "pergunta", "text": "Quais foram os antecedentes & o contexto? [...2]\nEm que consiste? [...1]"}
+        value, needles = V.field_value(entry, variant)
+        self.assertEqual(
+            value,
+            '<div style="text-align: center;"><img src="d.png"></div>'
+            "Quais foram os antecedentes &amp; o contexto? {{c1::<b>Vaticano</b>}}<br>Em que consiste? {{c1::Questão Romana}}",  # cada marcador leva a resposta do mesmo índice
+        )
+        self.assertEqual(needles, ["Quais foram os antecedentes &amp; o contexto?", "Em que consiste?", "d.png"])
+
+    def test_sem_imagem_only_removes_the_images_of_the_current_field(self):
+        entry = {"kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["A"], "images_html": ['<img src="d.png">'], "fields_hash": "f", "variants": []}
+        current = '<div style="text-align: center;">Título<br><img src="d.png" width="200"><br>Rótulo: {{c1::A}}</div>'
+        value, needles = V.field_value(entry, {"id": "1-sem_imagem", "type": "sem_imagem"}, current)
+        self.assertEqual((value, needles), ('<div style="text-align: center;">Título<br><br>Rótulo: {{c1::A}}</div>', []))
 
 
 class MiscTest(unittest.TestCase):

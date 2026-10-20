@@ -13,10 +13,23 @@ MEDIA_RE = re.compile(
     r"\[sound:|\[latex\]|\[\$\$?\]|\\\(|\\\[",
     re.I,
 )
+NON_IMAGE_MEDIA_RE = re.compile(
+    r"<audio\b|<video\b|<object\b|<embed\b|<svg\b|<math\b|<anki-mathjax|\[sound:|\[latex\]|\[\$\$?\]|\\\(|\\\[",
+    re.I,
+)
+IMG_RE = re.compile(r"<img\b[^>]*>", re.I)
 CLOZE_RE = re.compile(r"\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}", re.S)
+BLANK_RE = re.compile(r"\[\.\.\.\d*\]")
 NUMERIC_ANSWER_RE = re.compile(r"^[\d\s.,:/\-+()%]+$")
 UNSUPPORTED_MODEL_HINTS = ("type in", "type-in", "digit", "occlusion", "oclus")
 PLACEHOLDER = "[...]"
+MAX_BLANKS = 3  # lacunas ocultas ao mesmo tempo no cartão Cloze (protocolo v1.2)
+MIN_CLOZE_TEXT = 30  # caracteres visíveis (sem lacunas nem imagens) para o Cloze admitir uma pergunta
+
+
+def blank_markers(n: int) -> list[str]:
+    """Marcadores das lacunas no texto: `[...]` se há uma, `[...1]`, `[...2]`... se há várias."""
+    return [PLACEHOLDER] if n == 1 else [f"[...{i}]" for i in range(1, n + 1)]
 
 
 def strip_html(s: str) -> str:
@@ -57,6 +70,19 @@ class Card:
     stats: dict[str, Any] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
     q_field: int = 0  # índice do campo que contém a pergunta (em Cloze, o da lacuna)
+    blanks: int = 1  # lacunas ocultas ao mesmo tempo no cartão (Cloze: 1 a 3)
+    answers_html: list[str] = field(default_factory=list)  # uma resposta por lacuna, na ordem dos marcadores
+    answers_text: list[str] = field(default_factory=list)
+    images_html: list[str] = field(default_factory=list)  # <img> do campo da lacuna (Cloze), mantidos nas variantes
+
+    def __post_init__(self) -> None:
+        if not self.answers_html:  # cards.jsonl gerado antes do v1.2
+            self.answers_html = [self.answer_html]
+            self.answers_text = [self.answer_text]
+
+    @property
+    def markers(self) -> list[str]:
+        return blank_markers(self.blanks)
 
     @property
     def eligible(self) -> bool:
@@ -84,34 +110,60 @@ def parse_note(rec: dict[str, Any]) -> Card:
     if any(h in model.lower() for h in UNSUPPORTED_MODEL_HINTS):
         reasons.append("model_not_supported")
 
-    hits = [(i, m) for i, (_, v) in enumerate(fields) for m in CLOZE_RE.finditer(v)]
+    cloze_fields = [(i, list(CLOZE_RE.finditer(v))) for i, (_, v) in enumerate(fields)]
+    cloze_fields = [(i, hs) for i, hs in cloze_fields if hs]
     kind, ords = "unknown", [0]
     q_field = 0
     q_html = a_html = ""
-    if hits:
+    blanks = 1
+    answers_html: list[str] = []
+    images_html: list[str] = []
+    if cloze_fields:
         kind = "cloze"
-        if len(hits) != 1:
-            reasons.append("multi_cloze")
-        i, m = hits[0]
-        q_field = i
-        text = fields[i][1]
-        q_html = text[: m.start()] + PLACEHOLDER + text[m.end():]
-        a_html = m.group(2)
-        ords = [int(m.group(1)) - 1]
+        q_field, hits = cloze_fields[0]
+        number = int(hits[0].group(1))
+        if len(cloze_fields) > 1 or any(int(m.group(1)) != number for m in hits):
+            reasons.append("multi_cloze")  # vários cartões por nota
+        own = [m for m in hits if int(m.group(1)) == number]  # lacunas ocultas neste cartão; as de outro número aparecem reveladas
+        if len(own) > MAX_BLANKS:
+            reasons.append("too_many_blanks")
+        markers = blank_markers(len(own))
+        text = fields[q_field][1]
+        q_html, pos = "", 0
+        for m in hits:
+            q_html += text[pos : m.start()] + (markers[own.index(m)] if m in own else m.group(2))
+            pos = m.end()
+        q_html += text[pos:]
+        blanks = len(own)
+        answers_html = [m.group(2) for m in own]
+        images_html = IMG_RE.findall(text)
+        a_html = " | ".join(answers_html)
+        ords = [number - 1]
     elif len(fields) >= 2:
         kind = "basic"
         q_html, a_html = fields[0][1], fields[1][1]
+        answers_html = [a_html]
     else:
         reasons.append("no_fields")
 
-    q_text, a_text = strip_html(q_html), strip_html(a_html)
-    if not q_text.replace(PLACEHOLDER, "").strip():
+    q_text = strip_html(IMG_RE.sub("", q_html) if kind == "cloze" else q_html)
+    answers_text = [strip_html(a) for a in answers_html]
+    a_text = answers_text[0] if len(answers_text) == 1 else " | ".join(f"{k}: {t}" for k, t in enumerate(answers_text, 1))
+    visible = re.sub(r"\s+", " ", BLANK_RE.sub("", q_text)).strip()
+    if not visible:
         reasons.append("empty_question")
-    if not a_text:
+    elif kind == "cloze" and len(visible) < MIN_CLOZE_TEXT:
+        reasons.append("short_text")
+    if not answers_text or any(not t for t in answers_text):
         reasons.append("empty_answer")
-    if MEDIA_RE.search(q_html) or MEDIA_RE.search(a_html):
+    if kind == "cloze":
+        media = bool(NON_IMAGE_MEDIA_RE.search(q_html)) or any(MEDIA_RE.search(a) for a in answers_html)
+    else:
+        media = bool(MEDIA_RE.search(q_html) or MEDIA_RE.search(a_html))
+    if media:
         reasons.append("media_or_latex")
-    if a_text and NUMERIC_ANSWER_RE.match(a_text):
+    nonempty = [t for t in answers_text if t]
+    if nonempty and all(NUMERIC_ANSWER_RE.match(t) for t in nonempty):
         reasons.append("numeric_answer")
 
     return Card(
@@ -129,6 +181,10 @@ def parse_note(rec: dict[str, Any]) -> Card:
         stats=dict(rec.get("stats") or {}),
         reasons=reasons,
         q_field=q_field,
+        blanks=blanks,
+        answers_html=answers_html,
+        answers_text=answers_text,
+        images_html=images_html,
     )
 
 
