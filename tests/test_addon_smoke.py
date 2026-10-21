@@ -129,6 +129,9 @@ class FakeCol:
     def get_note(self, nid):
         return FakeNote()
 
+    def new_note(self, notetype):
+        return types.SimpleNamespace(fields=["", ""], tags=[])
+
 
 def make_card(**over):
     base = dict(
@@ -202,6 +205,41 @@ class FakeQueryOp:
         self.success(result)
 
 
+class FakeButton:
+    def __init__(self, text):
+        self.text, self.clicked = text, Signal()
+
+
+class FakeButtonBox:
+    def __init__(self):
+        self.buttons = []
+
+    def addButton(self, text, role):
+        button = FakeButton(text)
+        self.buttons.append(button)
+        return button
+
+
+class FakeDialog:
+    shown = False
+
+    def show(self):
+        self.shown = True
+
+
+class ClozeNote(FakeNote):
+    """Ficha Cloze com duas lacunas (texto longo o bastante para entrar no pipeline)."""
+
+    def __init__(self, text="A {{c1::mitose}} ocorre em células somáticas e a {{c1::meiose}} forma os gametas nos seres vivos."):
+        self.fields = [text, ""]
+
+    def items(self):
+        return [("Text", self.fields[0]), ("Extra", "")]
+
+    def note_type(self):
+        return {"name": "Cloze"}
+
+
 class SmokeTest(unittest.TestCase):
     def setUp(self):
         CONFIG.clear()
@@ -232,7 +270,7 @@ class SmokeTest(unittest.TestCase):
             f.write(bank_bytes())
         self.menu_tools = Menu()
         self.messages, self.dialog = [], {"path": ""}
-        self.texts, self.config_updated = [], []
+        self.texts, self.config_updated, self.added = [], [], []
         mw = types.SimpleNamespace(
             col=FakeCol(),
             pm=types.SimpleNamespace(name="Perfil"),
@@ -248,8 +286,10 @@ class SmokeTest(unittest.TestCase):
         self.mw = mw
         aqt = types.ModuleType("aqt")
         aqt.mw, aqt.gui_hooks = mw, self.hooks
+        aqt.dialogs = types.SimpleNamespace(open=lambda name, parent: types.SimpleNamespace(set_note=lambda note, deck_id: self.added.append((name, note, deck_id))))
         qt = types.ModuleType("aqt.qt")
         qt.QAction = Action
+        qt.QDialogButtonBox = types.SimpleNamespace(ButtonRole=types.SimpleNamespace(ActionRole="action"))
         qt.QFileDialog = types.SimpleNamespace(
             getSaveFileName=lambda *a, **k: (self.dialog["path"], ""),
             getOpenFileName=lambda *a, **k: (self.dialog.get("open", ""), ""),
@@ -258,7 +298,12 @@ class SmokeTest(unittest.TestCase):
         utils = types.ModuleType("aqt.utils")
         utils.showInfo = self.messages.append
         utils.tooltip = self.messages.append
-        utils.showText = lambda text, **kwargs: self.texts.append((text, kwargs))
+        def show_text(text, **kwargs):
+            dialog, box = FakeDialog(), FakeButtonBox()
+            self.texts.append((text, kwargs, dialog, box))
+            return dialog, box
+
+        utils.showText = show_text
         operations = types.ModuleType("aqt.operations")
         operations.QueryOp = FakeQueryOp
         anki = types.ModuleType("anki")
@@ -672,12 +717,47 @@ class SmokeTest(unittest.TestCase):
         live = importlib.import_module("dfc_probe.live")
         with mock.patch.object(live, "build_clients", return_value=(FakeLLM(), FakeLLM())):
             self.click_live()
-        ((text, kwargs),) = self.texts
-        self.assertEqual(kwargs["type"], "html")
-        self.assertIn("Variantes geradas", text)
+        ((text, kwargs, dialog, box),) = self.texts
+        self.assertEqual((kwargs["type"], kwargs["run"]), ("html", False))
+        self.assertTrue(dialog.shown)
+        self.assertIn("Variantes", text)
+        self.assertEqual([b.text for b in box.buttons], ["Criar cartão: Paráfrase", "Criar cartão: Reordenação", "Criar cartão: Formato", "Criar cartão: Pistas iniciais"])
         self.assertEqual(self.mod._store.count(), 0)
+        self.assertEqual(self.added, [])
         with open(bank_path, "rb") as f:
             self.assertEqual(f.read(), bank_before)
+
+    def click_variant_button(self, card):
+        self.cfg["live_enabled"] = True
+        self.mw.reviewer.card = card
+        live = importlib.import_module("dfc_probe.live")
+        with mock.patch.object(live, "build_clients", return_value=(FakeLLM(), FakeLLM())):
+            self.click_live()
+        ((_text, _kwargs, _dialog, box),) = self.texts
+        box.buttons[0].clicked.emit(False)
+
+    def test_variant_button_opens_the_add_window_prefilled_and_saves_nothing(self):
+        self.click_variant_button(make_card())
+        ((name, note, deck_id),) = self.added
+        self.assertEqual((name, deck_id), ("AddCards", 3))  # o baralho do cartão original
+        self.assertEqual(note.fields, ["Reformulação do tipo paraphrase desta pergunta: Q", "A"])
+        self.assertEqual(note.tags, ["t", "dfc_variante"])
+        self.assertEqual(self.mod._store.count(), 0)  # FakeCol não tem add_note: gravar na coleção falharia
+
+    def test_variant_button_on_a_cloze_card_rebuilds_the_blanks(self):
+        self.click_variant_button(make_card(note=lambda: ClozeNote()))
+        ((_name, note, _deck),) = self.added
+        self.assertEqual(note.fields, ["Em outras palavras: {{c1::mitose}} e {{c1::meiose}}", ""])
+
+    def test_card_that_cannot_have_variants_gets_a_short_message_not_a_window(self):
+        self.cfg["live_enabled"] = True
+        self.mw.reviewer.card = make_card(note=lambda: ClozeNote("A {{c1::mitose}} divide."))
+        gen, judge = FakeLLM(), FakeLLM()
+        live = importlib.import_module("dfc_probe.live")
+        with mock.patch.object(live, "build_clients", return_value=(gen, judge)):
+            self.click_live()
+        self.assertIn("texto visível curto demais", self.messages[-1])
+        self.assertEqual((self.texts, gen.calls, judge.calls), ([], [], []))
 
     def test_live_outside_the_review_screen_asks_for_a_card(self):
         self.cfg["live_enabled"] = True

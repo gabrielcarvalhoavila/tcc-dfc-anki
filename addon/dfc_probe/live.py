@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import html
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 try:  # instalado: o pipeline vem copiado para dfc_probe/dfc_pipeline (scripts/vendor_pipeline.ps1)
     from .dfc_pipeline.cards import parse_note
@@ -29,6 +29,7 @@ TYPE_LABELS = {
     "pergunta": "Em forma de pergunta",
     "reformat": "Outro formato",
 }
+BUTTON_LABELS = {"paraphrase": "Paráfrase", "reorder": "Reordenação", "cue_swap": "Pistas iniciais", "pergunta": "Pergunta", "reformat": "Formato"}
 REASON_LABELS = {
     # cartão que não vira variante (elegibilidade estrutural do pipeline)
     "model_not_supported": "tipo de nota não suportado (oclusão de imagem, digitar resposta)",
@@ -88,6 +89,7 @@ def generate_variants(record: dict[str, Any], gen_client: Any, judge_client: Any
         "text": card.question_text,
         "answers": answers,
         "images": len(card.images_html),
+        "entry": {"kind": card.kind, "ords": list(card.ords), "q_field": card.q_field, "answers_html": list(card.answers_html), "images_html": list(card.images_html)},
         "reasons": reasons,
         "conceptual": None,
         "reason": "",
@@ -125,32 +127,40 @@ def _labels(reasons: list[str]) -> str:
     return "; ".join(REASON_LABELS.get(r, r) for r in reasons)
 
 
+def explain_no_variants(result: dict[str, Any]) -> Optional[str]:
+    """Por que não há variantes para mostrar; None se há."""
+    if result["reasons"]:
+        return f"Não dá para gerar variantes deste cartão: {_labels(result['reasons'])}."
+    if result["error"]:
+        return f"Falha ao gerar as variantes: {result['error']}"
+    if not result["variants"]:
+        return f"O gerador considerou este cartão não conceitual (vocabulário, memorização pura ou dependente da imagem) e não criou variantes. Motivo: {result['reason'] or 'não informado'}."
+    return None
+
+
 def render_html(result: dict[str, Any]) -> str:
-    """Janela de resultado: o cartão, as variantes e o veredito de cada uma. Todo texto vindo do cartão ou do LLM é escapado."""
-    parts = ["<h3>Cartão original</h3>", f"<p>{_p(result['text'])}</p>"]
+    """Janela com o cartão, as variantes e o veredito de cada uma. Todo texto vindo do cartão ou do LLM é escapado."""
+    parts = [
+        "<p>Variantes geradas agora pela IA. O cartão da revisão não mudou e nada foi salvo. "
+        "Para estudar uma variante aprovada, clique no botão dela: abre a janela Adicionar do Anki já preenchida.</p>",
+        "<h3>Cartão original</h3>",
+        f"<p>{_p(result['text'])}</p>",
+    ]
     if result["images"]:
-        parts.append(f"<p><i>O cartão tem {result['images']} imagem(ns); nas variantes de texto ela ficaria acima do texto.</i></p>")
+        parts.append(f"<p><i>O cartão tem {result['images']} imagem(ns); nas variantes de texto ela fica acima do texto.</i></p>")
     answers = [f"{_p(marker)} {_p(answer)}".strip() for marker, answer in result["answers"]]
     parts.append("<p><b>Resposta esperada:</b><br>" + "<br>".join(answers) + "</p>")
-    if result["reasons"]:
-        parts += ["<h3>Sem variantes</h3>", f"<p>Este cartão não entra no pipeline: {_p(_labels(result['reasons']))}.</p>"]
-    elif result["error"]:
-        parts += ["<h3>Sem variantes</h3>", f"<p>Falha na geração: {_p(result['error'])}</p>"]
-    elif not result["variants"]:
-        parts += ["<h3>Sem variantes</h3>", f"<p>O gerador considerou o cartão não conceitual: {_p(result['reason'])}</p>"]
-    else:
-        parts.append("<h3>Variantes geradas</h3>")
-        for v in result["variants"]:
-            label = _p(TYPE_LABELS.get(v["type"], v["type"]))
-            if v["valid"]:
-                verdict = '<span style="color:#2e7d32">aprovada</span>'
-            else:
-                verdict = f'<span style="color:#c62828">reprovada: {_p(_labels(v["reasons"]))}</span>'
-            parts.append(f"<p><b>{label}</b> &mdash; {verdict}<br>{_p(v['text'])}</p>")
+    parts.append("<h3>Variantes</h3>")
+    for v in result["variants"]:
+        label = _p(TYPE_LABELS.get(v["type"], v["type"]))
+        if v["valid"]:
+            verdict = '<span style="color:#2e7d32">aprovada</span>'
+        else:
+            verdict = f'<span style="color:#c62828">reprovada: {_p(_labels(v["reasons"]))}</span>'
+        parts.append(f"<p><b>{label}</b> &mdash; {verdict}<br>{_p(v['text'])}</p>")
     m = result["models"]
     parts += [
         "<hr>",
-        f"<p><small>Gerador {_p(str(m['gen']))} ({m['gen_prompt']}) e juiz {_p(str(m['judge']))} ({m['judge_prompt']}), conforme a configuração; "
-        "prompts e checagens iguais aos do estudo, sem auditoria humana. Nada foi gravado: nota, banco de variantes e eventos ficam como estavam.</small></p>",
+        f"<p><small>Gerado por {_p(str(m['gen']))} e validado por {_p(str(m['judge']))} (prompts {m['gen_prompt']} e {m['judge_prompt']}, os do estudo; sem auditoria humana).</small></p>",
     ]
     return "".join(parts)

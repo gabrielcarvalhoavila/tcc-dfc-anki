@@ -13,7 +13,7 @@ from aqt.qt import QAction, QFileDialog, QInputDialog
 from aqt.utils import showInfo, tooltip
 
 from . import core, variants
-from .anki_adapter import anki_version, make_revlog_matcher, make_snapshot_fn, render_pair, scheduler_name
+from .anki_adapter import anki_version, make_revlog_matcher, make_snapshot_fn, new_variant_note, render_pair, scheduler_name
 
 ADDON_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_FILES = os.environ.get("DFC_PROBE_USER_FILES") or os.path.join(ADDON_DIR, "user_files")
@@ -69,6 +69,7 @@ except Exception:
     _log_error()
 
 _live_action = None
+_live_windows = []  # a janela de resultado não é modal: guarda a referência
 
 
 def _draw_enabled() -> bool:
@@ -346,6 +347,33 @@ def _card_record(card) -> dict:
     return core.note_to_record(card.nid, note.guid, note.note_type()["name"], note.items(), note.tags, [mw.col.decks.name(card.odid or card.did)])
 
 
+def _live_add_card(card, result: dict, variant: dict) -> None:
+    """Abre a janela Adicionar do Anki já preenchida com a variante; só vira cartão quando a pessoa clica em Adicionar."""
+    try:
+        from aqt import dialogs
+
+        entry = result["entry"]
+        value, _needles = variants.field_value(entry, variant)
+        note = new_variant_note(mw.col, card.note(), entry["q_field"], value, "dfc_variante")
+        dialogs.open("AddCards", mw).set_note(note, card.odid or card.did)
+    except Exception:
+        _log_error()
+        showInfo(f"Não foi possível abrir a janela Adicionar; detalhes em {ERR_LOG}.")
+
+
+def _live_show(card, result: dict, live) -> None:
+    from aqt.qt import QDialogButtonBox
+    from aqt.utils import showText
+
+    dialog, box = showText(live.render_html(result), parent=mw, type="html", run=False, title="DFC Probe: variantes do cartão", minWidth=640, minHeight=520)
+    for v in result["variants"]:
+        if v["valid"]:
+            button = box.addButton("Criar cartão: " + live.BUTTON_LABELS.get(v["type"], v["type"]), QDialogButtonBox.ButtonRole.ActionRole)
+            button.clicked.connect(lambda _checked=False, v=v: _live_add_card(card, result, v))
+    _live_windows.append(dialog)
+    dialog.show()
+
+
 @_safe
 def _live_variants() -> None:
     """Variantes do cartão em revisão, geradas e validadas na hora. Fora do estudo: não grava nota, banco nem evento."""
@@ -357,7 +385,6 @@ def _live_variants() -> None:
         tooltip("DFC Probe: abra um cartão na revisão.")
         return
     from aqt.operations import QueryOp
-    from aqt.utils import showText
 
     try:
         from . import live
@@ -372,9 +399,16 @@ def _live_variants() -> None:
         showInfo(f"Não foi possível preparar a variante sob demanda: {e}.\n\nConfira live_api_key, live_base_url e os modelos em Ferramentas > Complementos > DFC Probe > Config.")
         return
 
-    @_safe
     def done(result) -> None:
-        showText(live.render_html(result), parent=mw, type="html", title="DFC Probe: variantes do cartão", copyBtn=True, minWidth=640, minHeight=520)
+        try:
+            message = live.explain_no_variants(result)
+            if message:
+                showInfo(message)
+            else:
+                _live_show(card, result, live)
+        except Exception:
+            _log_error()
+            showInfo(f"Não foi possível mostrar as variantes; detalhes em {ERR_LOG}.")
 
     def failed(exc) -> None:
         showInfo(f"Não foi possível gerar as variantes: {exc}")

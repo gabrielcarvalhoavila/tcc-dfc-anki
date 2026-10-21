@@ -50,11 +50,13 @@ class GenerateVariantsTest(unittest.TestCase):
         self.assertTrue(all(v["valid"] and not v["reasons"] for v in result["variants"]), result["variants"])
         self.assertEqual((len(gen.calls), len(judge.calls)), (1, 4))
         self.assertEqual((result["answers"], result["conceptual"], result["error"]), ([("", "Mitocôndria")], True, None))
+        self.assertEqual(result["entry"], {"kind": "basic", "ords": [0], "q_field": 0, "answers_html": ["Mitocôndria"], "images_html": []})
         self.assertEqual(result["models"]["gen_prompt"], "gen-v4")
 
     def test_cloze_card_keeps_one_answer_per_marker(self):
         result = L.generate_variants(cloze_record(), FakeLLM(), FakeLLM())
         self.assertEqual(result["answers"], [("[...1]", "mitose"), ("[...2]", "meiose")])
+        self.assertEqual(result["entry"], {"kind": "cloze", "ords": [0], "q_field": 0, "answers_html": ["mitose", "meiose"], "images_html": []})
         self.assertEqual(sorted(v["type"] for v in result["variants"]), ["cue_swap", "paraphrase", "pergunta", "reorder"])
         self.assertTrue(all(v["valid"] for v in result["variants"]), result["variants"])
 
@@ -120,12 +122,16 @@ class RenderTest(unittest.TestCase):
         self.assertIn("aprovada", out)
         self.assertIn("reprovada: parecida demais com o original; motivo_novo", out)
         self.assertIn("Paráfrase", out)
-        self.assertIn("Nada foi gravado", out)
+        self.assertIn("nada foi salvo", out)
+        self.assertIn("Adicionar", out)
 
-    def test_cards_without_variants_say_why(self):
-        self.assertIn("texto visível curto demais", L.render_html(self.result(reasons=["short_text"], variants=[])))
-        self.assertIn("não conceitual: vocabulário", L.render_html(self.result(conceptual=False, reason="vocabulário", variants=[])))
-        self.assertIn("Falha na geração: HTTP 429", L.render_html(self.result(error="HTTP 429", variants=[])))
+    def test_cards_without_variants_get_a_short_explanation_instead_of_a_window(self):
+        self.assertIsNone(L.explain_no_variants(self.result()))
+        self.assertIn("texto visível curto demais", L.explain_no_variants(self.result(reasons=["short_text"], variants=[])))
+        text = L.explain_no_variants(self.result(conceptual=False, reason="vocabulário", variants=[]))
+        self.assertIn("não conceitual", text)
+        self.assertIn("vocabulário", text)
+        self.assertIn("Falha ao gerar as variantes: HTTP 429", L.explain_no_variants(self.result(error="HTTP 429", variants=[])))
 
     def test_image_note_is_shown_for_cloze_with_images(self):
         self.assertIn("2 imagem(ns)", L.render_html(self.result(images=2)))

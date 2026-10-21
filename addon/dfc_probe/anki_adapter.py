@@ -64,6 +64,16 @@ def render_pair(col: Any, card: Any, field_index: Optional[int] = None, value: O
     return out.question_text, out.answer_text
 
 
+def new_variant_note(col: Any, src: Any, q_field: int, value: str, tag: str) -> Any:
+    """Nota nova do tipo da original, com o campo da pergunta trocado por `value`. Nada é gravado: quem salva é a janela Adicionar do Anki."""
+    note = col.new_note(src.note_type())
+    for i, field in enumerate(src.fields):
+        note.fields[i] = field
+    note.fields[q_field] = value
+    note.tags = [*src.tags, tag]
+    return note
+
+
 def _model_name(card: Any) -> Any:
     note = _safe(lambda: card.note())
     nt = _safe(lambda: note.note_type()) if note is not None else None

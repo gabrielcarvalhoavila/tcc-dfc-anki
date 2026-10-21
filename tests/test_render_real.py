@@ -168,6 +168,23 @@ class RealRenderTest(unittest.TestCase):
         self.assertEqual(var_q.count('class="cloze"'), 2)
         self.assertEqual(self.col.get_note(note.id)["Text"], self.FICHA)
 
+    def test_new_variant_note_is_a_valid_unsaved_note_of_the_same_type(self):
+        note, _ = self.ficha()
+        variant = {"id": "v", "type": "pergunta", "text": "No governo Mussolini, quais foram os antecedentes do tratado? [...1]\nEm que consistiu o tratado? [...2]"}
+        value, _ = self.variants.field_value(self.FICHA_ENTRY, variant)
+        before = self.col.note_count()
+        new = self.adapter.new_variant_note(self.col, note, 0, value, "dfc_variante")
+        self.assertEqual((new.id, self.col.note_count()), (0, before))  # nada foi gravado: quem salva é a janela Adicionar
+        self.assertEqual((new.note_type()["name"], new.tags), ("Cloze", ["dfc_variante"]))
+        self.assertEqual(new.fields[1], "Pacto de 1929")  # os outros campos vêm da original
+        self.assertIn('<img src="d.png">', new.fields[0])
+        self.assertIn("{{c1::Questão Romana}}", new.fields[0])
+        self.assertIn("{{c1::reconhecimento do Vaticano}}", new.fields[0])
+        self.assertEqual(self.col.get_note(note.id)["Text"], self.FICHA)  # a original continua intacta
+        self.col.add_note(new, 1)  # o que a janela Adicionar faz ao clicar em Adicionar
+        self.assertEqual((len(new.cards()), self.col.note_count()), (1, before + 1))
+        self.assertIn("No governo Mussolini", new.cards()[0].question())
+
 
 @unittest.skipUnless(HAS_ANKI, "pacote anki não instalado (opcional)")
 class RealHooksTest(unittest.TestCase):
@@ -190,7 +207,7 @@ class RealHooksTest(unittest.TestCase):
         self.mw = types.SimpleNamespace(
             col=self.col,
             pm=types.SimpleNamespace(name="Perfil"),
-            addonManager=types.SimpleNamespace(getConfig=lambda name: self.cfg, writeConfig=lambda name, c: self.cfg.update(c)),
+            addonManager=types.SimpleNamespace(getConfig=lambda name: self.cfg, writeConfig=lambda name, c: self.cfg.update(c), setConfigUpdatedAction=lambda name, fn: None),
             form=types.SimpleNamespace(menuTools=smoke.Menu()),
         )
         aqt, qt, utils = types.ModuleType("aqt"), types.ModuleType("aqt.qt"), types.ModuleType("aqt.utils")
