@@ -61,7 +61,7 @@ def cmd_export(a: argparse.Namespace) -> int:
     if a.source == "ankiconnect":
         if not a.query:
             raise SystemExit('Informe --query (busca do Anki), por exemplo: --query "deck:HTTPS".')
-        records = source.from_ankiconnect(a.query)
+        records = source.from_ankiconnect(a.query, limit=a.limit, seed=a.seed)
     else:
         if not a.in_file:
             raise SystemExit("Informe --in-file com o JSONL exportado pelo add-on.")
@@ -159,6 +159,13 @@ def cmd_stats(a: argparse.Namespace) -> int:
         val = list(read_jsonl(a.validation))
         by = Counter((v["type"], v["auto_valid"]) for v in val)
         print(f"validacao: {len(val)} variantes  aprovadas: {sum(v['auto_valid'] for v in val)}")
+        judge_usage = Counter()
+        for v in val:
+            for k, n in (v.get("judge_usage") or {}).items():
+                if isinstance(n, (int, float)):
+                    judge_usage[k] += n
+        if judge_usage:
+            print("tokens (juiz):", dict(judge_usage))
         for (t, ok), n in sorted(by.items()):
             print(f"  {t:12} {'ok' if ok else 'reprovada':9} {n}")
     return 0
@@ -198,6 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--source", choices=["ankiconnect", "file"], default="ankiconnect")
     e.add_argument("--query", help='busca do Anki, por exemplo "deck:HTTPS"')
     e.add_argument("--in-file", help="JSONL exportado pelo add-on (para outra pessoa)")
+    e.add_argument("--limit", type=int, help="lê só uma amostra aleatória deste tamanho das notas encontradas (ankiconnect)")
+    e.add_argument("--seed", type=int, default=20261021, help="semente da amostra")
     e.add_argument("--out", default="data/cards.jsonl")
     e.set_defaults(func=cmd_export)
 

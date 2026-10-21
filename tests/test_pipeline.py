@@ -14,7 +14,7 @@ from unittest import mock
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 
-from dfc_pipeline import audit, cards, cli, generate, pack, validate  # noqa: E402
+from dfc_pipeline import audit, cards, cli, generate, pack, source, validate  # noqa: E402
 from dfc_pipeline.llm import FakeLLM, LLMClient, LLMError, parse_json_loose  # noqa: E402
 from dfc_pipeline.util import read_jsonl, write_jsonl  # noqa: E402
 
@@ -110,6 +110,26 @@ class CardsTest(unittest.TestCase):
         n["decks"], n["stats"] = ["Redes"], {"reps": 6, "lapses": 0}
         s = cards.summarize([cards.parse_note(n)])
         self.assertEqual(s["por_baralho"]["Redes"], {"notas": 1, "elegiveis": 1, "elegiveis_suspeitos": 1})
+
+
+class SourceTest(unittest.TestCase):
+    def test_limit_reads_only_a_seeded_sample_of_the_notes(self):
+        asked = []
+
+        def invoke(action, **params):
+            if action == "findNotes":
+                return list(range(1, 51))
+            if action == "notesInfo":
+                asked.extend(params["notes"])
+                return [{"noteId": i, "modelName": "Basic", "fields": {}, "cards": []} for i in params["notes"]]
+            return []
+
+        quiet = {"invoke": invoke, "log": lambda s: None}
+        recs = source.from_ankiconnect("deck:X", limit=7, seed=3, **quiet)
+        self.assertEqual((len(recs), len(set(asked))), (7, 7))  # o texto das outras 43 notas não foi pedido ao Anki
+        again = source.from_ankiconnect("deck:X", limit=7, seed=3, **quiet)
+        self.assertEqual([r["noteId"] for r in again], [r["noteId"] for r in recs])
+        self.assertEqual(len(source.from_ankiconnect("deck:X", limit=100, **quiet)), 50)
 
 
 class LLMTest(unittest.TestCase):

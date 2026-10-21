@@ -115,12 +115,13 @@ def decide(
     return not reasons, reasons, {"distance": round(dist, 3), "leak_ratio": round(lr, 3)}
 
 
-def judge_variant(client: Any, card: Card, text: str) -> Optional[dict[str, Any]]:
+def judge_variant(client: Any, card: Card, text: str) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+    """Veredito do juiz e uso de tokens da chamada; (None, None) se a chamada ou o JSON falharam."""
     try:
         resp = client.chat(build_judge_messages(card, text), temperature=0.0)
-        return parse_json_loose(resp["text"])
+        return parse_json_loose(resp["text"]), resp.get("usage")
     except (LLMError, ValueError):
-        return None
+        return None, None
 
 
 def validate(
@@ -154,7 +155,7 @@ def validate(
     stats: Counter = Counter()
     for i, (note_id, v) in enumerate(todo, 1):
         card = cards_by_id[note_id]
-        judge = judge_variant(client, card, v["text"])
+        judge, usage = judge_variant(client, card, v["text"])
         ok, reasons, metrics = decide(card, v, judge, min_distance=min_distance, min_distance_reorder=min_distance_reorder, leak_max=leak_max)
         append_jsonl(
             out_path,
@@ -165,6 +166,7 @@ def validate(
                 "text": v["text"],
                 **metrics,
                 "judge": judge,
+                "judge_usage": usage,
                 "judge_model": getattr(client, "model", "desconhecido"),
                 "judge_base_url": getattr(client, "base_url", None),
                 "judge_extra_body": getattr(client, "extra_body", None) or None,
