@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -16,7 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 
 from dfc_pipeline import audit, cards, cli, generate, pack, source, validate  # noqa: E402
 from dfc_pipeline.llm import FakeLLM, LLMClient, LLMError, parse_json_loose  # noqa: E402
-from dfc_pipeline.util import read_jsonl, write_jsonl  # noqa: E402
+from dfc_pipeline.util import read_jsonl, run_parallel, write_jsonl  # noqa: E402
 
 
 def ac_note(note_id, front, back, model="Basic", tags=None):
@@ -278,6 +279,59 @@ class LLMTest(unittest.TestCase):
                 self.assertEqual((os.environ["DFC_PRIMEIRA"], os.environ["DFC_SEGUNDA"]), ("1", "dois"))
 
 
+class RunParallelTest(unittest.TestCase):
+    def test_results_arrive_in_the_main_thread_and_cover_every_item(self):
+        main = threading.get_ident()
+        worker_threads, seen = set(), []
+
+        def fn(x):
+            worker_threads.add(threading.get_ident())
+            return x * 2
+
+        def on_result(item, result):
+            self.assertEqual(threading.get_ident(), main)
+            seen.append((item, result))
+
+        run_parallel(range(20), fn, 4, on_result)
+        self.assertEqual(sorted(seen), [(i, i * 2) for i in range(20)])
+        self.assertNotIn(main, worker_threads)
+
+    def test_one_worker_is_sequential_and_in_order(self):
+        seen = []
+        run_parallel([3, 1, 2], lambda x: x + 1, 1, lambda item, result: seen.append((item, result)))
+        self.assertEqual(seen, [(3, 4), (1, 2), (2, 3)])
+
+    def test_a_failing_worker_stops_the_run(self):
+        def boom(x):
+            raise RuntimeError("falhou")
+
+        with self.assertRaises(RuntimeError):
+            run_parallel([1, 2, 3], boom, 2, lambda item, result: None)
+
+    def test_only_a_bounded_number_of_items_is_in_flight(self):
+        gate, started, consumed = threading.Event(), [], []
+
+        def fn(x):
+            started.append(x)
+            gate.wait(5)
+            return x
+
+        def items():
+            for i in range(50):
+                consumed.append(i)
+                yield i
+
+        runner = threading.Thread(target=run_parallel, args=(items(), fn, 2, lambda item, result: None))
+        runner.start()
+        deadline = time.time() + 5
+        while len(started) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        self.assertLessEqual(len(consumed), 4)  # 2 x workers: interromper no meio perde poucos itens
+        gate.set()
+        runner.join(10)
+        self.assertEqual(len(consumed), 50)
+
+
 class ValidateTest(unittest.TestCase):
     def card(self):
         return cards.parse_note(ac_note(1, "Qual a diferença entre TCP e UDP?", "TCP é confiável e orientado à conexão; UDP é mais rápido, mas não confiável."))
@@ -351,6 +405,13 @@ class ValidateTest(unittest.TestCase):
         self.assertIn("too_similar", validate.decide(c, {"type": "reorder", "text": c.question_text}, judge)[1])
         self.assertAlmostEqual(validate.sequence_distance("a b c d", "c d a b"), 0.5)
 
+    def test_judge_flagging_a_topic_change_rejects_the_variant(self):
+        c = cards.parse_note({"noteId": 11, "modelName": "Cloze", "fields": {"Text": "Tecido Ósseo<br>Hormônio: {{c1::GH}}<br>Cresce por: {{c1::alongamento ósseo}}"}})
+        text = "Sistema Esquelético\nFator hormonal: [...1]\nMecanismo: [...2]"
+        ok, reasons, _ = validate.decide(c, {"type": "cue_swap", "text": text}, {"answer_preserved": True, "same_topic": False})
+        self.assertEqual((ok, reasons), (False, ["topic_changed"]))
+        self.assertTrue(validate.decide(c, {"type": "cue_swap", "text": text}, {"answer_preserved": True})[0])  # juiz sem o campo (modelos do Básico): não reprova
+
 
 class PipelineEndToEndTest(unittest.TestCase):
     def setUp(self):
@@ -405,6 +466,19 @@ class PipelineEndToEndTest(unittest.TestCase):
         self.assertEqual(total, 12 - 1)  # a variante rejeitada na auditoria sai
         self.assertEqual(bank["notes"]["1"]["kind"], "basic")
         self.assertEqual((bank["schema"], bank["notes"]["1"]["q_field"]), (3, 0))
+
+    def test_parallel_workers_give_the_same_records_as_sequential(self):
+        generate.generate(self.cards, FakeLLM(), self.p("g1.jsonl"), log=lambda s: None)
+        stats = generate.generate(self.cards, FakeLLM(), self.p("g2.jsonl"), workers=3, log=lambda s: None)
+        self.assertEqual(stats["com_variantes"], 3)
+        norm = lambda path, key: [{k: v for k, v in r.items() if k not in ("generator", "ts")} for r in sorted(read_jsonl(path), key=lambda r: r[key])]
+        self.assertEqual(norm(self.p("g1.jsonl"), "note_id"), norm(self.p("g2.jsonl"), "note_id"))
+        gen = list(read_jsonl(self.p("g1.jsonl")))
+        by_id = {c.note_id: c for c in self.cards}
+        validate.validate(by_id, gen, FakeLLM(), self.p("v1.jsonl"), log=lambda s: None)
+        vstats = validate.validate(by_id, gen, FakeLLM(), self.p("v2.jsonl"), workers=4, log=lambda s: None)
+        self.assertEqual(vstats["validas"], 12, dict(vstats))
+        self.assertEqual(norm(self.p("v1.jsonl"), "variant_id"), norm(self.p("v2.jsonl"), "variant_id"))
 
     def test_cloze_ficha_with_image_gets_four_text_variants_and_sem_imagem(self):
         text = 'Mrs Dalloway<br><div><img src="d.png"></div><br>Personagens<br>Lucrezia é a: {{c1::esposa de Septimus}}<br>Que sofre com: {{c1::o trauma da guerra}}'

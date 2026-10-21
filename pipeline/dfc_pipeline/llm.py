@@ -127,7 +127,7 @@ def _default_responder(messages: list[dict[str, str]]) -> str:
         ]
         return json.dumps({"conceptual": True, "reason": "fake", "variants": variants})
     return json.dumps(
-        {"answer_preserved": True, "ambiguous": False, "leaks_answer": False, "same_language": True, "same_question": True, "comment": "fake"}
+        {"answer_preserved": True, "ambiguous": False, "leaks_answer": False, "same_language": True, "same_question": True, "same_topic": True, "comment": "fake"}
     )
 
 

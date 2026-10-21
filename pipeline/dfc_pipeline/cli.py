@@ -88,7 +88,7 @@ def cmd_survey(a: argparse.Namespace) -> int:
 def cmd_generate(a: argparse.Namespace) -> int:
     cards = load_cards(a.cards)
     client = make_client("gen", a.dry_run)
-    stats = generate(cards, client, a.out, limit=a.limit, delay=a.delay, retry_errors=a.retry_errors)
+    stats = generate(cards, client, a.out, limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors)
     print("geracao:", dict(stats), f"-> {a.out}")
     return 0
 
@@ -98,7 +98,7 @@ def cmd_validate(a: argparse.Namespace) -> int:
     client = make_client("judge", a.dry_run)
     stats = validate(
         cards, list(read_jsonl(a.generation)), client, a.out,
-        limit=a.limit, delay=a.delay, retry_errors=a.retry_errors, min_distance=a.min_distance,
+        limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors, min_distance=a.min_distance,
         min_distance_reorder=a.min_distance_reorder, leak_max=a.leak_max,
     )
     print("validacao:", dict(stats), f"-> {a.out}")
@@ -222,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--out", default="data/generation.jsonl")
     g.add_argument("--limit", type=int)
     g.add_argument("--delay", type=float, default=0.0)
+    g.add_argument("--workers", type=int, default=1, help="chamadas simultâneas ao provedor (o padrão 1 é sequencial)")
     g.add_argument("--retry-errors", action="store_true")
     g.add_argument("--dry-run", action="store_true", help="usa um LLM falso; so para testar o fluxo")
     g.set_defaults(func=cmd_generate)
@@ -232,6 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--out", default="data/validation.jsonl")
     v.add_argument("--limit", type=int)
     v.add_argument("--delay", type=float, default=0.0)
+    v.add_argument("--workers", type=int, default=1, help="chamadas simultâneas ao provedor (o padrão 1 é sequencial)")
     v.add_argument("--retry-errors", action="store_true")
     v.add_argument("--min-distance", type=float, default=MIN_DISTANCE)
     v.add_argument("--min-distance-reorder", type=float, default=MIN_DISTANCE_REORDER)

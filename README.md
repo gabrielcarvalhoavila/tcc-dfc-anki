@@ -2,15 +2,15 @@
 
 Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sempre acerta" dependem da **forma** do enunciado. A cada revisão elegível de outro dia do Anki, o add-on sorteia o cartão original ou uma variante (mesma resposta, outras palavras, ordem ou formato) e registra o resultado; a análise compara a queda de acerto da variante em cartões suspeitos e em controles. Resultado nulo também é resultado.
 
-**Prazos:** entrega do trabalho em 4/12/2026; apresentação até 18/12/2026. Protocolo v1.3 congelado em 20/10/2026 (tag `protocolo-v1.3`; `protocolo-v1`, `protocolo-v1.1` e `protocolo-v1.2` ficam como histórico).
+**Prazos:** entrega do trabalho em 4/12/2026; apresentação até 18/12/2026. Protocolo v1.4 congelado em 21/10/2026 (tag `protocolo-v1.4`; `protocolo-v1`, `protocolo-v1.1`, `protocolo-v1.2` e `protocolo-v1.3` ficam como histórico).
 
 ## Estado
 
 | Marco | O quê | Data-limite | Estado |
 |---|---|---|---|
-| M0 | Protocolo v1.3 congelado | 20/10 | Feito (v1, v1.1, v1.2 e v1.3 em 20/10, antes de qualquer sorteio) |
+| M0 | Protocolo v1.4 congelado | 20/10 | Feito (v1, v1.1, v1.2 e v1.3 em 20/10 e v1.4 em 21/10, antes de qualquer sorteio) |
 | M2 | Add-on v0 (só registro) | 27/10 | Feito em 20/10: 12 revisões no Anki 26.05 real conferidas contra o histórico do Anki, 0 divergências em nota, horário, tempo, intervalo anterior e tipo; a resposta desfeita (Ctrl+Z) fica sem par e é marcada na exportação |
-| M1 | Banco de variantes e auditoria de 100 | 28/10 (irmão: 30/10) | Código pronto e testado com LLM falso (Básico e fichas Cloze); falta conta no OpenRouter, modelo fixo, piloto com cartões reais do irmão, geração e auditoria |
+| M1 | Banco de variantes e auditoria de 100 | 28/10 (irmão: 30/10) | Código pronto e testado; API do Gemini configurada e piloto de 40 notas do irmão feito (prompts v4, 91% de aprovação automática); falta gerar o banco completo e auditar |
 | M3 | Add-on v1 (sorteio e exibição) | 30/10 | Código pronto (0.3.0, fichas Cloze com imagem); testado com o motor real do Anki 26.5 sem interface; a 0.2.x foi vista na interface em 20/10 (exibição das variantes, tecla `x`, Ctrl+Z); falta ver as fichas na interface e o banco real (roteiro em [arquitetura](docs/arquitetura.md)) |
 | M4 | Coleta | 2/11 a 22/11 | |
 | M5 | Análise | 23/11 a 27/11 | Não iniciado |
@@ -24,7 +24,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | `docs/` | [projeto](docs/projeto.md), [fundamentação](docs/fundamentacao.md), [protocolo](docs/protocolo.md) (congelado), [piloto](docs/piloto-relampago.md), [arquitetura](docs/arquitetura.md), [desvios](docs/desvios.md) |
 | `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
-| `tests/` | 125 testes, sem rede; 16 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
+| `tests/` | 136 testes, sem rede; 16 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |

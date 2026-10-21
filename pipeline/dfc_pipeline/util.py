@@ -6,7 +6,8 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Iterable, Iterator
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from typing import Any, Callable, Iterable, Iterator
 
 WORD_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -53,3 +54,27 @@ def append_jsonl(path: str, record: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def run_parallel(items: Iterable[Any], fn: Callable[[Any], Any], workers: int, on_result: Callable[[Any, Any], None]) -> None:
+    """Roda fn(item) em `workers` threads. on_result(item, resultado) roda sempre na thread principal, na ordem de
+    conclusão, então pode gravar arquivo sem trava; só 2 x workers itens ficam em andamento (uma interrupção perde pouco)."""
+    if workers <= 1:
+        for item in items:
+            on_result(item, fn(item))
+        return
+    source = iter(items)
+    running: dict[Any, Any] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        while True:
+            while len(running) < workers * 2:
+                try:
+                    item = next(source)
+                except StopIteration:
+                    break
+                running[pool.submit(fn, item)] = item
+            if not running:
+                return
+            finished, _ = wait(running, return_when=FIRST_COMPLETED)
+            for future in finished:
+                on_result(running.pop(future), future.result())

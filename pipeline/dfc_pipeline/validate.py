@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 from .cards import BLANK_RE, Card
 from .llm import LLMError, parse_json_loose
 from .prompts import JUDGE_PROMPT_VERSION, build_judge_messages
-from .util import append_jsonl, as_bool, now_iso, read_jsonl, tokens, write_jsonl
+from .util import append_jsonl, as_bool, now_iso, read_jsonl, run_parallel, tokens, write_jsonl
 
 MIN_DISTANCE = 0.30
 MIN_DISTANCE_REORDER = 0.20  # reordenar muda pouco as palavras: a distância do reorder é pela ordem delas e o limiar é menor
@@ -112,6 +112,8 @@ def decide(
             reasons.append("language_changed")
         if not as_bool(judge.get("same_question", True)):
             reasons.append("question_changed")
+        if not as_bool(judge.get("same_topic", True)):
+            reasons.append("topic_changed")
     return not reasons, reasons, {"distance": round(dist, 3), "leak_ratio": round(lr, 3)}
 
 
@@ -132,6 +134,7 @@ def validate(
     *,
     limit: int | None = None,
     delay: float = 0.0,
+    workers: int = 1,
     retry_errors: bool = False,
     min_distance: float = MIN_DISTANCE,
     min_distance_reorder: float = MIN_DISTANCE_REORDER,
@@ -153,10 +156,19 @@ def validate(
     if limit is not None:
         todo = todo[:limit]
     stats: Counter = Counter()
-    for i, (note_id, v) in enumerate(todo, 1):
-        card = cards_by_id[note_id]
-        judge, usage = judge_variant(client, card, v["text"])
-        ok, reasons, metrics = decide(card, v, judge, min_distance=min_distance, min_distance_reorder=min_distance_reorder, leak_max=leak_max)
+    n_done = 0
+
+    def work(item: tuple[int, dict[str, str]]) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+        result = judge_variant(client, cards_by_id[item[0]], item[1]["text"])
+        if delay:
+            time.sleep(delay)
+        return result
+
+    def record(item: tuple[int, dict[str, str]], result: tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]) -> None:
+        nonlocal n_done
+        note_id, v = item
+        judge, usage = result
+        ok, reasons, metrics = decide(cards_by_id[note_id], v, judge, min_distance=min_distance, min_distance_reorder=min_distance_reorder, leak_max=leak_max)
         append_jsonl(
             out_path,
             {
@@ -176,11 +188,12 @@ def validate(
                 "ts": now_iso(),
             },
         )
+        n_done += 1
         stats["validas" if ok else "invalidas"] += 1
         for r in reasons:
             stats[f"motivo:{r}"] += 1
-        if i % 20 == 0 or i == len(todo):
-            log(f"  {i}/{len(todo)} {dict(stats)}")
-        if delay:
-            time.sleep(delay)
+        if n_done % 20 == 0 or n_done == len(todo):
+            log(f"  {n_done}/{len(todo)} {dict(stats)}")
+
+    run_parallel(todo, work, workers, record)
     return stats
