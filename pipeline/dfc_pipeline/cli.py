@@ -89,7 +89,7 @@ def cmd_generate(a: argparse.Namespace) -> int:
     cards = load_cards(a.cards)
     client = make_client("gen", a.dry_run)
     try:
-        stats = generate(cards, client, a.out, limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors, max_failures=a.max_failures)
+        stats = generate(cards, client, a.out, limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors, max_failures=a.max_failures, shuffle_seed=a.shuffle)
     except RunAborted as e:
         return aborted(e, a.out)
     print("geracao:", dict(stats), f"-> {a.out}")
@@ -235,6 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--delay", type=float, default=0.0)
     g.add_argument("--workers", type=int, default=1, help="chamadas simultâneas ao provedor (o padrão 1 é sequencial)")
     g.add_argument("--max-failures", type=int, default=15, help="interrompe depois de N falhas seguidas (crédito, chave, rede); 0 desliga")
+    g.add_argument("--shuffle", type=int, metavar="SEMENTE", help="sorteia a ordem das notas; com --limit, cada lote é uma amostra aleatória das que faltam")
     g.add_argument("--retry-errors", action="store_true")
     g.add_argument("--dry-run", action="store_true", help="usa um LLM falso; so para testar o fluxo")
     g.set_defaults(func=cmd_generate)

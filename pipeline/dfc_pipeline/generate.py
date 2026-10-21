@@ -1,6 +1,7 @@
 """Geração das variantes por LLM (protocolo, seção 6.1). Retomável: pula notas já geradas."""
 from __future__ import annotations
 
+import random
 import time
 from collections import Counter
 from typing import Any, Callable
@@ -70,6 +71,7 @@ def generate(
     workers: int = 1,
     retry_errors: bool = False,
     max_failures: int = 15,
+    shuffle_seed: int | None = None,
     log: Callable[[str], None] = print,
 ) -> Counter:
     existing = {r["note_id"]: r for r in read_jsonl(out_path)}
@@ -77,6 +79,8 @@ def generate(
         existing = {k: r for k, r in existing.items() if not r.get("error")}
         write_jsonl(out_path, existing.values())
     todo = [c for c in cards if c.eligible and c.note_id not in existing]
+    if shuffle_seed is not None:
+        random.Random(shuffle_seed).shuffle(todo)  # com --limit, cada lote é uma amostra aleatória das notas que faltam
     if limit is not None:
         todo = todo[:limit]
     stats: Counter = Counter()

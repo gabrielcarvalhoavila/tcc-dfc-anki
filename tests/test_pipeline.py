@@ -516,6 +516,12 @@ class PipelineEndToEndTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("INTERROMPIDO", out.getvalue())
 
+    def test_shuffled_batches_cover_every_note_exactly_once(self):
+        out = self.p("g.jsonl")
+        generate.generate(self.cards, FakeLLM(), out, limit=2, shuffle_seed=7, log=lambda s: None)
+        generate.generate(self.cards, FakeLLM(), out, limit=2, shuffle_seed=7, log=lambda s: None)
+        self.assertEqual(sorted(r["note_id"] for r in read_jsonl(out)), [1, 2, 3])  # a nota 4 é inelegível
+
     def test_parallel_workers_give_the_same_records_as_sequential(self):
         generate.generate(self.cards, FakeLLM(), self.p("g1.jsonl"), log=lambda s: None)
         stats = generate.generate(self.cards, FakeLLM(), self.p("g2.jsonl"), workers=3, log=lambda s: None)
