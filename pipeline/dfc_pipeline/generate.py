@@ -30,6 +30,8 @@ def generate_one(card: Card, client: Any) -> dict[str, Any]:
         "model": getattr(client, "model", "desconhecido"),
         "prompt_version": GEN_PROMPT_VERSION,
         "temperature": getattr(client, "temperature", None),
+        "base_url": getattr(client, "base_url", None),
+        "extra_body": getattr(client, "extra_body", None) or None,
         "ts": now_iso(),
     }
     rec: dict[str, Any] = {

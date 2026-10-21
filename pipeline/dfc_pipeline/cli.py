@@ -5,13 +5,15 @@ import argparse
 import json
 import os
 import sys
+import time
+import urllib.parse
 from collections import Counter
 from typing import Any
 
 from . import ankiconnect, audit, pack, source, survey
 from .cards import Card, parse_note, summarize
 from .generate import generate
-from .llm import FakeLLM, LLMClient
+from .llm import FakeLLM, LLMClient, LLMError, parse_json_loose
 from .util import read_jsonl, write_jsonl
 from .validate import LEAK_MAX, MIN_DISTANCE, MIN_DISTANCE_REORDER, validate
 
@@ -21,7 +23,7 @@ DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 def load_env(path: str = ".env") -> None:
     if not os.path.exists(path):
         return
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -33,15 +35,22 @@ def load_env(path: str = ".env") -> None:
 def make_client(role: str, dry_run: bool) -> Any:
     if dry_run:
         return FakeLLM()
+    prefix = "DFC_GEN_" if role == "gen" else "DFC_JUDGE_"
     base = os.environ.get("DFC_LLM_BASE_URL", DEFAULT_BASE_URL)
     key = os.environ.get("DFC_LLM_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
-    model = os.environ.get("DFC_GEN_MODEL" if role == "gen" else "DFC_JUDGE_MODEL")
+    model = os.environ.get(prefix + "MODEL")
     local = "localhost" in base or "127.0.0.1" in base
     if not model or (not key and not local):
-        var = "DFC_GEN_MODEL" if role == "gen" else "DFC_JUDGE_MODEL"
-        raise SystemExit(f"Defina DFC_LLM_API_KEY e {var} (veja .env.example), ou use --dry-run para testar o fluxo sem LLM.")
+        raise SystemExit(f"Defina DFC_LLM_API_KEY e {prefix}MODEL (veja .env.example), ou use --dry-run para testar o fluxo sem LLM.")
+    raw_extra = os.environ.get(prefix + "EXTRA_BODY") or os.environ.get("DFC_EXTRA_BODY")
+    try:
+        extra = json.loads(raw_extra) if raw_extra else None
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"{prefix}EXTRA_BODY não é um JSON válido: {e}")
+    if extra is not None and not isinstance(extra, dict):
+        raise SystemExit(f"{prefix}EXTRA_BODY deve ser um objeto JSON.")
     temperature = 0.7 if role == "gen" else 0.0
-    return LLMClient(base, key, model, temperature=temperature, json_mode=os.environ.get("DFC_JSON_MODE") == "1")
+    return LLMClient(base, key, model, temperature=temperature, json_mode=os.environ.get("DFC_JSON_MODE") == "1", extra_body=extra)
 
 
 def load_cards(path: str) -> list[Card]:
@@ -155,6 +164,32 @@ def cmd_stats(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ping(a: argparse.Namespace) -> int:
+    """Uma chamada mínima por papel: confere URL, chave, ID do modelo, JSON e uso de tokens, sem mostrar a chave."""
+    failed = False
+    for role, label in (("gen", "gerador"), ("judge", "juiz")):
+        client = make_client(role, False)
+        host = urllib.parse.urlparse(client.base_url).netloc
+        print(f"{label}: {client.model} em {host} | json_mode={'sim' if client.json_mode else 'nao'} | extra={client.extra_body or '-'}")
+        try:
+            if a.models is not None and role == "gen":
+                ids = [m for m in client.list_models() if a.models.lower() in m.lower()]
+                print(f"  modelos que contem '{a.models}': {', '.join(ids) or 'nenhum'}")
+            start = time.time()
+            messages = [
+                {"role": "system", "content": 'Responda somente com JSON no formato {"soma": <número>, "idioma": "pt"}.'},
+                {"role": "user", "content": "Quanto é 17 + 25?"},
+            ]
+            resp = client.chat(messages)
+            data = parse_json_loose(resp["text"])
+        except (LLMError, ValueError) as e:
+            print(f"  FALHOU: {e}")
+            failed = True
+            continue
+        print(f"  ok em {int((time.time() - start) * 1000)} ms | resposta: {data} | uso: {resp.get('usage')}")
+    return 1 if failed else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dfc_pipeline", description="Pipeline de variantes do projeto DFC")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -223,6 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--generation")
     st.add_argument("--validation")
     st.set_defaults(func=cmd_stats)
+
+    pg = sub.add_parser("ping", help="testa o provedor: uma chamada mínima ao gerador e ao juiz (não mostra a chave)")
+    pg.add_argument("--models", nargs="?", const="", help="lista também os IDs de modelo do provedor que contenham este texto")
+    pg.set_defaults(func=cmd_ping)
     return p
 
 

@@ -166,6 +166,8 @@ def validate(
                 **metrics,
                 "judge": judge,
                 "judge_model": getattr(client, "model", "desconhecido"),
+                "judge_base_url": getattr(client, "base_url", None),
+                "judge_extra_body": getattr(client, "extra_body", None) or None,
                 "judge_prompt_version": JUDGE_PROMPT_VERSION,
                 "reasons": reasons,
                 "auto_valid": ok,

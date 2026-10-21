@@ -1,12 +1,15 @@
 """Testes do pipeline de variantes (sem rede externa e sem Anki)."""
+import contextlib
 import csv
 import http.server
+import io
 import json
 import os
 import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
@@ -174,6 +177,85 @@ class LLMTest(unittest.TestCase):
         with self.assertRaises(LLMError):
             client.chat([{"role": "user", "content": "oi"}])
         self.assertEqual(len(calls), 1)
+
+    def test_extra_body_is_sent_but_cannot_replace_model_or_messages(self):
+        seen = {}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                data = json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+
+        client = LLMClient(self.serve(H), "x", "m1", temperature=0.0, extra_body={"reasoning_effort": "minimal", "temperature": 1.0, "model": "outro", "messages": []})
+        client.chat([{"role": "user", "content": "oi"}])
+        body = seen["body"]
+        self.assertEqual((body["reasoning_effort"], body["temperature"], body["model"], len(body["messages"])), ("minimal", 1.0, "m1", 1))
+
+    def test_ping_lists_models_hides_the_key_and_fails_on_a_bad_model(self):
+        class H(http.server.BaseHTTPRequestHandler):
+            def reply(self, code, obj):
+                data = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_GET(self):
+                self.reply(200, {"data": [{"id": "models/gemini-3.8-flash"}, {"id": "models/gemini-3.5-flash-lite"}, {"id": "models/embedding-001"}]})
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if body["model"] == "inexistente":
+                    self.reply(404, {"error": {"message": "model not found"}})
+                else:
+                    self.reply(200, {"choices": [{"message": {"content": '{"soma": 42, "idioma": "pt"}'}}], "usage": {"total_tokens": 9}})
+
+            def log_message(self, *a):
+                pass
+
+        env = {
+            "DFC_LLM_BASE_URL": self.serve(H), "DFC_LLM_API_KEY": "SEGREDO-123", "DFC_GEN_MODEL": "gemini-3.8-flash",
+            "DFC_JUDGE_MODEL": "gemini-3.5-flash-lite", "DFC_JUDGE_EXTRA_BODY": '{"reasoning_effort": "minimal"}',
+        }
+        args = cli.build_parser().parse_args(["ping", "--models", "flash"])
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), contextlib.redirect_stdout(out):
+            self.assertEqual(cli.cmd_ping(args), 0)
+        text = out.getvalue()
+        self.assertIn("models/gemini-3.5-flash-lite, models/gemini-3.8-flash", text)
+        self.assertNotIn("embedding", text)  # o filtro tira o que não contém o texto
+        self.assertIn("'soma': 42", text)
+        self.assertNotIn("SEGREDO-123", text)
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {**env, "DFC_JUDGE_MODEL": "inexistente"}, clear=True), contextlib.redirect_stdout(out):
+            self.assertEqual(cli.cmd_ping(args), 1)
+        self.assertIn("FALHOU", out.getvalue())
+
+    def test_make_client_reads_extra_body_per_role_and_rejects_bad_json(self):
+        env = {"DFC_LLM_BASE_URL": "http://localhost:1/v1", "DFC_GEN_MODEL": "g", "DFC_JUDGE_MODEL": "j", "DFC_EXTRA_BODY": '{"x": 1}', "DFC_JUDGE_EXTRA_BODY": '{"reasoning_effort": "minimal"}'}
+        with mock.patch.dict(os.environ, env, clear=True):
+            gen, judge = cli.make_client("gen", False), cli.make_client("judge", False)
+        self.assertEqual((gen.extra_body, judge.extra_body), ({"x": 1}, {"reasoning_effort": "minimal"}))
+        for bad in ("{quebrado", "[1]"):
+            with mock.patch.dict(os.environ, {**env, "DFC_GEN_EXTRA_BODY": bad}, clear=True):
+                with self.assertRaises(SystemExit):
+                    cli.make_client("gen", False)
+
+    def test_load_env_accepts_a_file_saved_with_bom(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, ".env")
+            with open(path, "w", encoding="utf-8-sig") as f:
+                f.write('DFC_PRIMEIRA=1\nDFC_SEGUNDA="dois"\n')
+            with mock.patch.dict(os.environ, {}, clear=True):
+                cli.load_env(path)
+                self.assertEqual((os.environ["DFC_PRIMEIRA"], os.environ["DFC_SEGUNDA"]), ("1", "dois"))
 
 
 class ValidateTest(unittest.TestCase):

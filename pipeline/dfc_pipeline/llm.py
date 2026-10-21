@@ -26,6 +26,7 @@ class LLMClient:
         max_retries: int = 4,
         sleep: Callable[[float], None] = time.sleep,
         json_mode: bool = False,
+        extra_body: Optional[dict[str, Any]] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -35,18 +36,33 @@ class LLMClient:
         self.max_retries = max_retries
         self.sleep = sleep
         self.json_mode = json_mode
+        self.extra_body = dict(extra_body or {})
 
-    def chat(self, messages: list[dict[str, str]], temperature: Optional[float] = None) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature if temperature is None else temperature,
-        }
-        if self.json_mode:
-            body["response_format"] = {"type": "json_object"}
+    def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json", "User-Agent": "dfc-pipeline/1.0"}  # o padrão do urllib é recusado por alguns provedores
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def list_models(self) -> list[str]:
+        req = urllib.request.Request(f"{self.base_url}/models", headers=self._headers())
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                payload = json.load(resp)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300]
+            e.close()
+            raise LLMError(f"HTTP {e.code}: {detail}") from e
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError) as e:
+            raise LLMError(f"rede ou resposta inválida: {e}") from e
+        return sorted(str(m.get("id", "")) for m in payload.get("data", []) if isinstance(m, dict))
+
+    def chat(self, messages: list[dict[str, str]], temperature: Optional[float] = None) -> dict[str, Any]:
+        # extra_body vem depois da temperatura (permite fixar 1.0 nos Gemini 3), mas nunca troca model e messages
+        body: dict[str, Any] = {"temperature": self.temperature if temperature is None else temperature, **self.extra_body, "model": self.model, "messages": messages}
+        if self.json_mode:
+            body["response_format"] = {"type": "json_object"}
+        headers = self._headers()
         data = json.dumps(body).encode("utf-8")
         last_error = "erro desconhecido"
         for attempt in range(self.max_retries + 1):
