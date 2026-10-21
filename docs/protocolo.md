@@ -1,6 +1,6 @@
 # Protocolo e plano: dependência da forma do cartão (DFC)
 
-**Versão 1.4, 2026-10-21. Congelado** com a tag Git `protocolo-v1.4` (as `protocolo-v1`, `protocolo-v1.1`, `protocolo-v1.2` e `protocolo-v1.3` ficam como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (2/11) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
+**Versão 1.5, 2026-10-21. Congelado** com a tag Git `protocolo-v1.5` (as `protocolo-v1` a `protocolo-v1.4` ficam como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (2/11) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
 
 **Como ler.** **(premissa)** = número meu, de calibração, não verificado em dados do estudo. † = vem da minha memória, não verifiquei. As datas da seção 11 são limites derivados da entrega (4/12) e da apresentação (18/12), não estimativas de esforço.
 
@@ -13,6 +13,7 @@
 | v1.2 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. Adapta o desenho ao participante principal, o irmão (estudante de vestibular), cujas fichas são Cloze com várias lacunas ocultas juntas e imagem. (1) Elegibilidade: Cloze com 1 a 3 lacunas ocultas ao mesmo tempo no mesmo cartão e com imagens, que ficam fixas; áudio, vídeo, fórmula e mídia na resposta seguem fora; texto visível de pelo menos 30 caracteres; respostas todas numéricas, Image Occlusion e baralhos de inglês ficam fora (seções 4.1 e 4.2). (2) Variantes do Cloze: `pergunta` (LLM) e `sem_imagem` (determinística); o Básico mantém os quatro tipos (seção 6.1); a auditoria passa a perguntar se o texto sozinho basta (6.2). (3) O add-on registra `note_kind`, `n_blanks` e `has_image` (6.3); a análise agrupa por nota, acrescenta essas covariáveis e ganha sensibilidades para o efeito de escala (seção 7). Hipóteses, desfecho, definição de suspeito e limiares não mudam. |
 | v1.3 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. O Cloze passa de dois para cinco tipos de variante, cada um mudando uma dimensão da forma: `paraphrase` (palavras), `reorder` (ordem dos itens), `cue_swap` (palavras iniciais e rótulos), `pergunta` (formato) e `sem_imagem` (imagem). Os quatro de texto são gerados pelo LLM e a `sem_imagem` continua determinística (seção 6.1). A validação trata o `reorder` à parte, pela ordem das palavras e não pelo conjunto delas (6.2); a análise por tipo ganha grupos por dimensão e a ressalva de que nem todo tipo existe para toda nota (7). Hipóteses, desfecho, elegibilidade, definição de suspeito e limiares não mudam. |
 | v1.4 | 21/10/2026 | Antes de qualquer sorteio. Já houve geração, mas só de piloto: 40 notas do irmão, cujas variantes foram descartadas e não entram no banco (6.1). (1) Provedor: API do Gemini (Google), em conta paga pré-paga, no lugar do OpenRouter (o pagamento foi recusado); gerador `gemini-3.8-flash` e juiz `gemini-3.5-flash-lite`, com parâmetros fixos e registrados (6.1). (2) Prompts `gen-v4` e `judge-v4`, ajustados depois do piloto: contexto de vestibular brasileiro (só para a terminologia); o `cue_swap` troca o título e os rótulos por sinônimos ou reformulações fiéis do mesmo assunto, sem acrescentar fatos; a `pergunta` fica autônoma, com uma interrogação por lacuna. (3) O juiz do Cloze ganha o critério `same_topic` (o título e os rótulos tratam do mesmo assunto), com motivo de reprovação `topic_changed` (6.2). Hipóteses, desfecho, elegibilidade, definição de suspeito e limiares não mudam. |
+| v1.5 | 21/10/2026 | Antes de qualquer sorteio. Hipóteses, desfecho, elegibilidade, definição de suspeito, limiares e prompts não mudam. (1) O universo do banco fica explícito: todos os baralhos exceto os de inglês (consulta de 21/10: 5.121 notas, 2.727 elegíveis; 4.2). (2) O registro do irmão não é anonimizado, porque os dados ficam só com o autor e o irmão; se forem compartilhados com terceiros, anonimizar antes (6.6 e 10). (3) O escore E3 ganha definição operacional: o tamanho do enunciado e o prefixo mínimo identificador vêm do texto exportado e se ligam ao registro por `note_id`; o teste é a AUC contra o baseline `reps`, exploratório (3 e 6.3.1). |
 
 ---
 
@@ -49,7 +50,7 @@ No [experimento-relâmpago](piloto-relampago.md), 12 conceitos que a pessoa sabi
 |---|---|---|
 | E1 validade das variantes | Sim | Confirmatória (H1) |
 | E2 penalidade da variante | Sim | Confirmatória (H2): núcleo do TCC |
-| E3 sinais de candidato (tempo até revelar, prefixo mínimo identificador) | Sim, exploratória | Registrar desde o primeiro dia; sem limiar de decisão |
+| E3 sinais de candidato (tempo até revelar, prefixo mínimo identificador) | Sim, exploratória | Registrar desde o primeiro dia (o texto do cartão sai da exportação e se liga ao registro por `note_id`, 6.3.1); sem limiar de decisão |
 | E4 rotação de variantes | **Fora** | Intervenção: alternar variantes nos cartões com alta DFC e medir depois se a queda de acerto diminui. Exige semanas de seguimento; fica como trabalho futuro |
 | E5 custo e usabilidade | Descritiva | Minutos e lapsos extras, % de "variante ruim" |
 
@@ -72,7 +73,7 @@ Tipos Básico e Cloze; conceito (não vocabulário, número, data ou lista orden
 
 - **Básico:** só texto (sem imagem, áudio, vídeo ou LaTeX).
 - **Cloze:** de 1 a 3 lacunas ocultas ao mesmo tempo no mesmo cartão, todas com o mesmo número `cN` (nota com vários números gera vários cartões e fica fora, assim como a nota com mais de 3 lacunas). O campo da lacuna pode ter **imagens**, que ficam fixas nas duas formas, exceto na variante `sem_imagem`. Continuam fora áudio, vídeo, fórmula ou LaTeX e qualquer mídia dentro de uma resposta. O texto visível (sem as lacunas e sem as imagens) precisa ter ≥ 30 caracteres, para haver contexto para uma pergunta, e as respostas não podem ser todas numéricas.
-- **Fora em qualquer tipo:** Image Occlusion e tipos com resposta digitada; baralhos de inglês (vocabulário e frases de mineração; decisão de 20/10: não é o que o estudo quer testar); subbaralhos em que a imagem é o enunciado (a regra dos 30 caracteres já tira a maior parte deles); respostas vazias. Os baralhos excluídos são definidos na consulta de exportação, antes da geração.
+- **Fora em qualquer tipo:** Image Occlusion e tipos com resposta digitada; baralhos de inglês (vocabulário e frases de mineração; decisão de 20/10: não é o que o estudo quer testar); subbaralhos em que a imagem é o enunciado (a regra dos 30 caracteres já tira a maior parte deles); respostas vazias. Os baralhos excluídos são definidos na consulta de exportação, antes da geração. **Consulta do banco (21/10):** todos os baralhos menos "Inglês - Mineração" e "Inglês - Gramática", notas não suspensas, não novas e com cartão vencendo até 22/11 (`-deck:Ingl* -deck:ENGLISH* -is:suspended -is:new prop:due<=32`). No irmão: 5.121 notas, 2.727 elegíveis pelas regras acima (todas Cloze: 458 com uma lacuna, 1.397 com duas e 872 com três; 2.262 com imagem).
 
 A elegibilidade estrutural é checada pelo pipeline; "conceitual" e "o texto sozinho permite variantes" são julgados pelo LLM na geração (sinal `conceptual` do registro) e conferidos na auditoria.
 
@@ -150,7 +151,7 @@ A cada revisão elegível de outro dia do Anki: sorteio 50/50 com semente por ev
 
 1. **Elegibilidade** (4.2): decide se o cartão pode receber variante. Todo cartão elegível, suspeito ou controle, é sorteado em **toda** revisão de outro dia do Anki (50/50); nas exposições do mesmo dia o original aparece sem sorteio; os não elegíveis não são alterados nem analisados.
 2. **Estrato** (seção 5): suspeito ou controle, só pelo histórico (`reps`, `lapses`, última resposta). É o que entra na análise primária. O tempo até revelar não existe nas revisões antigas, por isso não define o estrato.
-3. **Escore de candidato** (E3, exploratório): combina sequência de acertos, tempo até revelar relativo ao tamanho do enunciado (comparado com a distribuição da própria pessoa), prefixo mínimo identificador (PMI) e formato (Básico ou Cloze). É registrado desde o primeiro dia, mas **não** altera quem é sorteado (evita circularidade); depois se testa se prevê a falha da variante (AUC por validação cruzada, contra o baseline "só `reps`").
+3. **Escore de candidato** (E3, exploratório; H3): testa se sinais baratos distinguem os cartões cuja variante falha, o que serviria para escolher quais cartões variar sem testar todos. Não altera quem é sorteado (evita circularidade). Sinais: (a) sequência de acertos (`reps`, `lapses` e `prev_eases`, do registro); (b) tempo até revelar relativo ao tamanho do enunciado, `log(t_reveal_ms / caracteres)` padronizado pela distribuição da própria pessoa nas exposições do original (braço original e exposições sem sorteio) de notas do texto exportado, truncado no percentil 99 porque cartão esquecido aberto distorce o tempo; (c) prefixo mínimo identificador (PMI): o menor número de palavras iniciais do enunciado que o distingue de todas as outras notas do texto exportado; (d) formato (`note_kind`, `n_blanks`, `has_image`). O tamanho do enunciado (caracteres do texto visível do cartão original, sem lacunas, marcadores nem imagens, também no braço variante, para o sinal descrever o cartão e não o texto gerado) e o PMI saem do texto exportado e se ligam ao registro por `note_id`; esse texto fica guardado em `data/` até o fim da análise e vale para todo evento sorteado, porque o add-on só sorteia nota não editada desde a geração. Teste: nos eventos do braço variante, AUC por validação cruzada (agrupada por nota) do escore contra o baseline "só `reps`", com IC e sem limiar de decisão. O tempo até revelar é o da mesma exposição da resposta (as revisões antigas não o têm), então o resultado é uma associação exploratória e não um detector validado; com ≈ 400 eventos de variante e ≈ 40 falhas **(premissa)**, só aparecem sinais grandes.
 
 ### 6.4 Agendamento e modo sonda
 
@@ -162,7 +163,7 @@ Só desktop; revisões no celular não geram eventos e não entram. Anki fixo na
 
 ### 6.6 Dados e privacidade
 
-SQLite local no add-on, exportado em CSV; para o irmão, IDs com hash e sem texto de cartão nos dados compartilhados.
+SQLite local no add-on, exportado em CSV, sem texto de cartão. No irmão o CSV **não é anonimizado** (`anonymize_export` desligado, decisão de 21/10): os dados ficam só com o autor e o irmão, e o `note_id` real liga cada evento ao texto exportado (E3). Se os dados forem compartilhados com terceiros (banca, repositório, OSF †), antes se tira o texto de cartão e se anonimizam os IDs e os nomes de baralho e de perfil.
 
 ### 6.7 Subamostra com resposta digitada
 
@@ -233,7 +234,7 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 
 - Voluntários: o professor André informou (20/10) que não exige TCLE; mesmo assim, consentimento escrito curto por mensagem (finalidade, dados coletados, retirada a qualquer momento).
 - O texto dos cartões vai ao provedor de LLM na geração: só com consentimento; privacidade do provedor sem treino com os dados (na camada paga da API do Gemini, o conteúdo não melhora os produtos do Google); alternativa local (modelo compatível com OpenAI) se alguém não aceitar.
-- Dados compartilhados sem texto de cartão e com IDs anonimizados.
+- Os dados do irmão (eventos e texto dos cartões) ficam só com o autor e o irmão, que concordou em fornecê-los (informado pelo autor em 21/10); o que for compartilhado com terceiros vai sem texto de cartão e com IDs anonimizados (6.6).
 
 ---
 
@@ -243,7 +244,7 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 
 | Marco | Entrega | Pronto quando | Data-limite |
 |---|---|---|---|
-| M0 | Protocolo congelado (v1, v1.1, v1.2, v1.3 e v1.4) | Arquivo comitado com a tag da versão (a vigente é `protocolo-v1.4`); (opcional) registro no OSF † | **feito em 20/10** (v1.4 em 21/10) |
+| M0 | Protocolo congelado (v1, v1.1, v1.2, v1.3, v1.4 e v1.5) | Arquivo comitado com a tag da versão (a vigente é `protocolo-v1.5`); (opcional) registro no OSF † | **feito em 20/10** (v1.4 e v1.5 em 21/10) |
 | M1 | Banco de variantes offline (E1) | Cartões elegíveis do irmão e do autor processados, depois de um piloto com 20 a 30 cartões reais do irmão; auditoria de ≥ 100 variantes com H1 ≥ 85% | qua 28/10 |
 | M2 | Add-on v0 (só registro) | Registra as revisões do desktop sem quebrar o Anki; conferido contra o histórico de revisões do Anki | ter 27/10 |
 | M3 | Add-on v1 (sorteio e exibição) | Teste de fumaça: a variante aparece nos dois lados, o log bate com o Anki, "variante ruim" e desligar funcionam; instalado no Anki do autor e no do irmão | sex 30/10 |
@@ -270,7 +271,7 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 
 ## 13. Registro e desvios
 
-Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1`, `protocolo-v1.2`, `protocolo-v1.3` e `protocolo-v1.4` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
+Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1`, `protocolo-v1.2`, `protocolo-v1.3`, `protocolo-v1.4` e `protocolo-v1.5` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
 
 ---
 
@@ -282,4 +283,5 @@ Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protoc
 - **Antes do primeiro sorteio (20/10, v1.2):** o irmão é o participante principal; entram Cloze com 1 a 3 lacunas e imagens fixas, e ficam fora Image Occlusion e os baralhos de inglês; variantes do Cloze: `pergunta` e `sem_imagem`; análise agrupada por nota, com `n_blanks` e `has_image` e sensibilidades para o efeito de escala.
 - **Antes do primeiro sorteio (20/10, v1.3):** o Cloze tem cinco tipos de variante, um por dimensão da forma (`paraphrase`, `reorder`, `cue_swap`, `pergunta` e `sem_imagem`); a inversão continua fora; a análise primária é a média sobre os tipos, e a análise por tipo e por dimensão é exploratória.
 - **Antes do primeiro sorteio (21/10, v1.4):** o provedor passa a ser a API do Gemini (pago, pré-pago), com gerador `gemini-3.8-flash` e juiz `gemini-3.5-flash-lite`; prompts `gen-v4` e `judge-v4` depois do piloto de 40 notas do irmão (variantes descartadas); `cue_swap` por sinônimos fiéis e `same_topic` no juiz do Cloze.
-- **Pendências fora do protocolo:** créditos da API do Gemini para gerar o banco completo (estimativa de US$ 6 a 7 com os prompts v4) e auditoria humana de ≥ 100 variantes (cerca de 30 pelo irmão).
+- **Antes do primeiro sorteio (21/10, v1.5):** o universo do banco é todo baralho sem inglês (5.121 notas, 2.727 elegíveis); o registro do irmão não é anonimizado e os dados ficam só com o autor e o irmão; o E3 ganha definição operacional (tamanho do enunciado e PMI do texto exportado, ligados ao registro por `note_id`).
+- **Pendências fora do protocolo:** créditos da API do Gemini para gerar o banco completo (cerca de US$ 7,3 para as 2.727 elegíveis com os prompts v4) e auditoria humana de ≥ 100 variantes (cerca de 30 pelo irmão).
