@@ -6,7 +6,7 @@ from collections import Counter
 from typing import Any, Callable
 
 from .cards import Card
-from .llm import LLMError, parse_json_loose
+from .llm import LLMError, RunAborted, parse_json_loose
 from .prompts import GEN_PROMPT_VERSION, VARIANT_TYPES, build_generation_messages
 from .util import append_jsonl, as_bool, now_iso, read_jsonl, run_parallel, sha1_short, write_jsonl
 
@@ -69,6 +69,7 @@ def generate(
     delay: float = 0.0,
     workers: int = 1,
     retry_errors: bool = False,
+    max_failures: int = 15,
     log: Callable[[str], None] = print,
 ) -> Counter:
     existing = {r["note_id"]: r for r in read_jsonl(out_path)}
@@ -79,7 +80,7 @@ def generate(
     if limit is not None:
         todo = todo[:limit]
     stats: Counter = Counter()
-    done = 0
+    done = streak = 0
 
     def work(card: Card) -> dict[str, Any]:
         rec = generate_one(card, client)
@@ -88,9 +89,10 @@ def generate(
         return rec
 
     def record(_card: Card, rec: dict[str, Any]) -> None:
-        nonlocal done
+        nonlocal done, streak
         append_jsonl(out_path, rec)
         done += 1
+        streak = streak + 1 if rec["error"] else 0
         if rec["error"]:
             stats["erro"] += 1
         elif rec["conceptual"]:
@@ -99,6 +101,8 @@ def generate(
             stats["nao_conceitual"] += 1
         if done % 10 == 0 or done == len(todo):
             log(f"  {done}/{len(todo)} {dict(stats)}")
+        if max_failures and streak >= max_failures:
+            raise RunAborted(f"{streak} falhas seguidas (crédito, chave ou rede?); último erro: {rec['error']}")
 
     run_parallel(todo, work, workers, record)
     return stats

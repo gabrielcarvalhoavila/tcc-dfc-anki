@@ -13,7 +13,7 @@ from typing import Any
 from . import ankiconnect, audit, pack, source, survey
 from .cards import Card, parse_note, summarize
 from .generate import generate
-from .llm import FakeLLM, LLMClient, LLMError, parse_json_loose
+from .llm import FakeLLM, LLMClient, LLMError, RunAborted, parse_json_loose
 from .util import read_jsonl, write_jsonl
 from .validate import LEAK_MAX, MIN_DISTANCE, MIN_DISTANCE_REORDER, validate
 
@@ -88,19 +88,30 @@ def cmd_survey(a: argparse.Namespace) -> int:
 def cmd_generate(a: argparse.Namespace) -> int:
     cards = load_cards(a.cards)
     client = make_client("gen", a.dry_run)
-    stats = generate(cards, client, a.out, limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors)
+    try:
+        stats = generate(cards, client, a.out, limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors, max_failures=a.max_failures)
+    except RunAborted as e:
+        return aborted(e, a.out)
     print("geracao:", dict(stats), f"-> {a.out}")
     return 0
+
+
+def aborted(e: RunAborted, out: str) -> int:
+    print(f"INTERROMPIDO: {e}. O que já foi feito está em {out}; resolva (saldo, chave, rede) e rode de novo com --retry-errors.")
+    return 1
 
 
 def cmd_validate(a: argparse.Namespace) -> int:
     cards = {c.note_id: c for c in load_cards(a.cards)}
     client = make_client("judge", a.dry_run)
-    stats = validate(
-        cards, list(read_jsonl(a.generation)), client, a.out,
-        limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors, min_distance=a.min_distance,
-        min_distance_reorder=a.min_distance_reorder, leak_max=a.leak_max,
-    )
+    try:
+        stats = validate(
+            cards, list(read_jsonl(a.generation)), client, a.out,
+            limit=a.limit, delay=a.delay, workers=a.workers, retry_errors=a.retry_errors, min_distance=a.min_distance,
+            min_distance_reorder=a.min_distance_reorder, leak_max=a.leak_max, max_failures=a.max_failures,
+        )
+    except RunAborted as e:
+        return aborted(e, a.out)
     print("validacao:", dict(stats), f"-> {a.out}")
     return 0
 
@@ -223,6 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--limit", type=int)
     g.add_argument("--delay", type=float, default=0.0)
     g.add_argument("--workers", type=int, default=1, help="chamadas simultâneas ao provedor (o padrão 1 é sequencial)")
+    g.add_argument("--max-failures", type=int, default=15, help="interrompe depois de N falhas seguidas (crédito, chave, rede); 0 desliga")
     g.add_argument("--retry-errors", action="store_true")
     g.add_argument("--dry-run", action="store_true", help="usa um LLM falso; so para testar o fluxo")
     g.set_defaults(func=cmd_generate)
@@ -234,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--limit", type=int)
     v.add_argument("--delay", type=float, default=0.0)
     v.add_argument("--workers", type=int, default=1, help="chamadas simultâneas ao provedor (o padrão 1 é sequencial)")
+    v.add_argument("--max-failures", type=int, default=15, help="interrompe depois de N falhas seguidas do juiz (crédito, chave, rede); 0 desliga")
     v.add_argument("--retry-errors", action="store_true")
     v.add_argument("--min-distance", type=float, default=MIN_DISTANCE)
     v.add_argument("--min-distance-reorder", type=float, default=MIN_DISTANCE_REORDER)

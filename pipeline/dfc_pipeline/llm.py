@@ -13,6 +13,10 @@ class LLMError(RuntimeError):
     pass
 
 
+class RunAborted(RuntimeError):
+    """Falhas seguidas demais (crédito, chave ou rede): a rodada pára; o que já foi feito fica gravado e --retry-errors retoma."""
+
+
 class LLMClient:
     RETRY_STATUS = (408, 429, 500, 502, 503, 504)
 

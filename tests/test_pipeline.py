@@ -16,7 +16,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 
 from dfc_pipeline import audit, cards, cli, generate, pack, source, validate  # noqa: E402
-from dfc_pipeline.llm import FakeLLM, LLMClient, LLMError, parse_json_loose  # noqa: E402
+from dfc_pipeline.llm import FakeLLM, LLMClient, LLMError, RunAborted, parse_json_loose  # noqa: E402
 from dfc_pipeline.util import read_jsonl, run_parallel, write_jsonl  # noqa: E402
 
 
@@ -466,6 +466,55 @@ class PipelineEndToEndTest(unittest.TestCase):
         self.assertEqual(total, 12 - 1)  # a variante rejeitada na auditoria sai
         self.assertEqual(bank["notes"]["1"]["kind"], "basic")
         self.assertEqual((bank["schema"], bank["notes"]["1"]["q_field"]), (3, 0))
+
+    def test_a_run_of_failures_stops_and_resumes_with_retry_errors(self):
+        def broken(messages):
+            raise LLMError("HTTP 429: sem credito")
+
+        with self.assertRaises(RunAborted):
+            generate.generate(self.cards, FakeLLM(broken), self.p("g.jsonl"), max_failures=2, log=lambda s: None)
+        recs = list(read_jsonl(self.p("g.jsonl")))
+        self.assertEqual([bool(r["error"]) for r in recs], [True, True])  # parou na segunda falha, sem insistir nas outras notas
+        stats = generate.generate(self.cards, FakeLLM(), self.p("g.jsonl"), retry_errors=True, log=lambda s: None)
+        self.assertEqual(stats["com_variantes"], 3)
+
+    def test_a_success_resets_the_failure_streak(self):
+        fake, calls = FakeLLM(), []
+
+        def flaky(messages):
+            calls.append(1)
+            if len(calls) <= 2:
+                raise LLMError("HTTP 503")
+            return fake.responder(messages)
+
+        stats = generate.generate(self.cards, FakeLLM(flaky), self.p("g.jsonl"), max_failures=3, log=lambda s: None)
+        self.assertEqual((stats["erro"], stats["com_variantes"]), (2, 1))
+
+    def test_judge_failures_stop_validation_and_retry_errors_resumes(self):
+        generate.generate(self.cards, FakeLLM(), self.p("g.jsonl"), log=lambda s: None)
+        gen = list(read_jsonl(self.p("g.jsonl")))
+        by_id = {c.note_id: c for c in self.cards}
+
+        def broken(messages):
+            raise LLMError("HTTP 429: sem credito")
+
+        with self.assertRaises(RunAborted):
+            validate.validate(by_id, gen, FakeLLM(broken), self.p("v.jsonl"), max_failures=3, log=lambda s: None)
+        self.assertEqual([r["reasons"] for r in read_jsonl(self.p("v.jsonl"))], [["judge_error"]] * 3)
+        stats = validate.validate(by_id, gen, FakeLLM(), self.p("v.jsonl"), retry_errors=True, log=lambda s: None)
+        self.assertEqual(stats["validas"], 12, dict(stats))
+
+    def test_cli_reports_the_interruption_and_exits_with_1(self):
+        write_jsonl(self.p("cards.jsonl"), (c.to_dict() for c in self.cards))
+
+        def broken(messages):
+            raise LLMError("HTTP 429: sem credito")
+
+        out = io.StringIO()
+        with mock.patch.object(cli, "make_client", return_value=FakeLLM(broken)), contextlib.redirect_stdout(out):
+            code = cli.main(["generate", "--cards", self.p("cards.jsonl"), "--out", self.p("gen.jsonl"), "--max-failures", "2"])
+        self.assertEqual(code, 1)
+        self.assertIn("INTERROMPIDO", out.getvalue())
 
     def test_parallel_workers_give_the_same_records_as_sequential(self):
         generate.generate(self.cards, FakeLLM(), self.p("g1.jsonl"), log=lambda s: None)

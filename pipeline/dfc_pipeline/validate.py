@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from typing import Any, Callable, Optional
 
 from .cards import BLANK_RE, Card
-from .llm import LLMError, parse_json_loose
+from .llm import LLMError, RunAborted, parse_json_loose
 from .prompts import JUDGE_PROMPT_VERSION, build_judge_messages
 from .util import append_jsonl, as_bool, now_iso, read_jsonl, run_parallel, tokens, write_jsonl
 
@@ -139,6 +139,7 @@ def validate(
     min_distance: float = MIN_DISTANCE,
     min_distance_reorder: float = MIN_DISTANCE_REORDER,
     leak_max: float = LEAK_MAX,
+    max_failures: int = 15,
     log: Callable[[str], None] = print,
 ) -> Counter:
     existing = list(read_jsonl(out_path))
@@ -156,7 +157,7 @@ def validate(
     if limit is not None:
         todo = todo[:limit]
     stats: Counter = Counter()
-    n_done = 0
+    n_done = streak = 0
 
     def work(item: tuple[int, dict[str, str]]) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         result = judge_variant(client, cards_by_id[item[0]], item[1]["text"])
@@ -165,7 +166,7 @@ def validate(
         return result
 
     def record(item: tuple[int, dict[str, str]], result: tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]) -> None:
-        nonlocal n_done
+        nonlocal n_done, streak
         note_id, v = item
         judge, usage = result
         ok, reasons, metrics = decide(cards_by_id[note_id], v, judge, min_distance=min_distance, min_distance_reorder=min_distance_reorder, leak_max=leak_max)
@@ -189,11 +190,14 @@ def validate(
             },
         )
         n_done += 1
+        streak = streak + 1 if judge is None else 0
         stats["validas" if ok else "invalidas"] += 1
         for r in reasons:
             stats[f"motivo:{r}"] += 1
         if n_done % 20 == 0 or n_done == len(todo):
             log(f"  {n_done}/{len(todo)} {dict(stats)}")
+        if max_failures and streak >= max_failures:
+            raise RunAborted(f"{streak} chamadas do juiz falharam em sequência (crédito, chave ou rede?)")
 
     run_parallel(todo, work, workers, record)
     return stats
