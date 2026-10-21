@@ -13,9 +13,15 @@ import tempfile
 import time
 import types
 import unittest
+from unittest import mock
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "addon"))
+sys.path.insert(0, os.path.join(ROOT, "pipeline"))
+
+from dfc_pipeline.llm import FakeLLM  # noqa: E402
+
+LIVE_LABEL = "Gerar variantes do cartão atual (LLM)..."
 
 
 class Signal:
@@ -36,12 +42,16 @@ class Action:
         self.triggered = Signal()
         self.toggled = Signal()
         self.checked = False
+        self.visible = True
 
     def setCheckable(self, v):
         pass
 
     def setChecked(self, v):
         self.checked = v
+
+    def setVisible(self, v):
+        self.visible = bool(v)
 
 
 class Menu:
@@ -170,6 +180,28 @@ class ContextMenu:
         return action
 
 
+class FakeQueryOp:
+    """QueryOp do Anki, mas síncrono: roda a operação e chama success ou failure."""
+
+    def __init__(self, *, parent, op, success):
+        self.op, self.success, self.on_failure = op, success, None
+
+    def failure(self, fn):
+        self.on_failure = fn
+        return self
+
+    def with_progress(self, label=None):
+        return self
+
+    def run_in_background(self):
+        try:
+            result = self.op(None)
+        except Exception as e:
+            self.on_failure(e)
+            return
+        self.success(result)
+
+
 class SmokeTest(unittest.TestCase):
     def setUp(self):
         CONFIG.clear()
@@ -200,12 +232,20 @@ class SmokeTest(unittest.TestCase):
             f.write(bank_bytes())
         self.menu_tools = Menu()
         self.messages, self.dialog = [], {"path": ""}
+        self.texts, self.config_updated = [], []
         mw = types.SimpleNamespace(
             col=FakeCol(),
             pm=types.SimpleNamespace(name="Perfil"),
-            addonManager=types.SimpleNamespace(getConfig=lambda name: self.cfg, writeConfig=lambda name, c: self.cfg.update(c)),
+            addonManager=types.SimpleNamespace(
+                getConfig=lambda name: self.cfg,
+                writeConfig=lambda name, c: self.cfg.update(c),
+                setConfigUpdatedAction=lambda name, fn: self.config_updated.append(fn),
+            ),
             form=types.SimpleNamespace(menuTools=self.menu_tools),
+            state="review",
+            reviewer=types.SimpleNamespace(card=make_card()),
         )
+        self.mw = mw
         aqt = types.ModuleType("aqt")
         aqt.mw, aqt.gui_hooks = mw, self.hooks
         qt = types.ModuleType("aqt.qt")
@@ -218,13 +258,16 @@ class SmokeTest(unittest.TestCase):
         utils = types.ModuleType("aqt.utils")
         utils.showInfo = self.messages.append
         utils.tooltip = self.messages.append
+        utils.showText = lambda text, **kwargs: self.texts.append((text, kwargs))
+        operations = types.ModuleType("aqt.operations")
+        operations.QueryOp = FakeQueryOp
         anki = types.ModuleType("anki")
         anki_template = types.ModuleType("anki.template")
         anki_template.TemplateRenderContext = FakeRenderContext
         anki.template = anki_template
-        names = ("aqt", "aqt.qt", "aqt.utils", "anki", "anki.template")
+        names = ("aqt", "aqt.qt", "aqt.utils", "aqt.operations", "anki", "anki.template")
         self.saved = {m: sys.modules.get(m) for m in names}
-        sys.modules.update({"aqt": aqt, "aqt.qt": qt, "aqt.utils": utils, "anki": anki, "anki.template": anki_template})
+        sys.modules.update({"aqt": aqt, "aqt.qt": qt, "aqt.utils": utils, "aqt.operations": operations, "anki": anki, "anki.template": anki_template})
         for name in [m for m in sys.modules if m == "dfc_probe" or m.startswith("dfc_probe.")]:
             del sys.modules[name]
         self.mod = importlib.import_module("dfc_probe")
@@ -603,6 +646,76 @@ class SmokeTest(unittest.TestCase):
         self.assertFalse(self.cfg["draw_enabled"])
         draw.toggled.emit(True)
         self.assertTrue(self.cfg["draw_enabled"])
+
+    def click_live(self):
+        self.menu_action(LIVE_LABEL).triggered.emit(False)
+
+    def test_live_item_is_hidden_by_default_and_follows_the_saved_config(self):
+        action = self.menu_action(LIVE_LABEL)
+        self.assertFalse(action.visible)
+        self.config_updated[0]({"live_enabled": True})
+        self.assertTrue(action.visible)
+        self.config_updated[0]({"live_enabled": False})
+        self.assertFalse(action.visible)
+
+    def test_live_off_only_explains_and_does_not_load_the_pipeline(self):
+        self.click_live()
+        self.assertIn("desligada", self.messages[-1])
+        self.assertNotIn("dfc_probe.live", sys.modules)
+        self.assertEqual(self.texts, [])
+
+    def test_live_shows_variants_without_touching_events_bank_or_note(self):
+        self.cfg["live_enabled"] = True
+        bank_path = os.path.join(self.tmp.name, "variant_bank.json")
+        with open(bank_path, "rb") as f:
+            bank_before = f.read()
+        live = importlib.import_module("dfc_probe.live")
+        with mock.patch.object(live, "build_clients", return_value=(FakeLLM(), FakeLLM())):
+            self.click_live()
+        ((text, kwargs),) = self.texts
+        self.assertEqual(kwargs["type"], "html")
+        self.assertIn("Variantes geradas", text)
+        self.assertEqual(self.mod._store.count(), 0)
+        with open(bank_path, "rb") as f:
+            self.assertEqual(f.read(), bank_before)
+
+    def test_live_outside_the_review_screen_asks_for_a_card(self):
+        self.cfg["live_enabled"] = True
+        self.mw.state = "deckBrowser"
+        self.click_live()
+        self.assertIn("abra um cartão", self.messages[-1])
+        self.assertEqual(self.texts, [])
+
+    def test_live_reports_a_missing_env_file_and_missing_settings(self):
+        self.cfg["live_enabled"] = True
+        self.cfg["live_env_file"] = os.path.join(self.tmp.name, "nao-existe.env")
+        self.click_live()
+        self.assertIn("arquivo não encontrado", self.messages[-1])
+        empty_env = os.path.join(self.tmp.name, ".env")
+        open(empty_env, "w").close()
+        self.cfg["live_env_file"] = empty_env
+        with mock.patch.dict(os.environ):
+            for key in [k for k in os.environ if k.startswith("DFC_")]:
+                del os.environ[key]
+            self.click_live()
+        self.assertIn("Defina DFC_LLM_API_KEY", self.messages[-1])
+        self.assertEqual(self.texts, [])
+
+    def test_live_failure_is_shown_to_the_user(self):
+        self.cfg["live_enabled"] = True
+        live = importlib.import_module("dfc_probe.live")
+        with mock.patch.object(live, "build_clients", return_value=(FakeLLM(), FakeLLM())):
+            with mock.patch.object(live, "generate_variants", side_effect=RuntimeError("rede caiu")):
+                self.click_live()
+        self.assertIn("rede caiu", self.messages[-1])
+        self.assertEqual(self.texts, [])
+
+    def test_status_reports_the_live_switch(self):
+        self.menu_action("Status").triggered.emit(False)
+        self.assertIn("Variante sob demanda (LLM): desligada", self.messages[-1])
+        self.cfg["live_enabled"] = True
+        self.menu_action("Status").triggered.emit(False)
+        self.assertIn("Variante sob demanda (LLM): ligada", self.messages[-1])
 
 
 if __name__ == "__main__":

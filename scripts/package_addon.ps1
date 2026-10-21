@@ -14,6 +14,8 @@ if ($LASTEXITCODE -ge 8) {
     Write-Error "Falha ao copiar (robocopy $LASTEXITCODE)"
     exit 1
 }
+. (Join-Path $PSScriptRoot "vendor_pipeline.ps1")
+Copy-PipelineInto -Root $root -AddonDir $tmp
 Compress-Archive -Path "$tmp\*" -DestinationPath $zip
 Move-Item $zip $out
 Remove-Item $tmp -Recurse -Force

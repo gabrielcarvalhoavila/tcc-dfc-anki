@@ -2,15 +2,26 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
+
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class LLMError(RuntimeError):
     pass
+
+
+class ConfigError(ValueError):
+    """Configuração do LLM ausente ou inválida; `missing` indica que falta a chave ou o modelo."""
+
+    def __init__(self, message: str, missing: bool = False):
+        super().__init__(message)
+        self.missing = missing
 
 
 class RunAborted(RuntimeError):
@@ -92,6 +103,41 @@ class LLMClient:
             if attempt < self.max_retries:
                 self.sleep(wait)
         raise LLMError(f"falhou após {self.max_retries + 1} tentativas: {last_error}")
+
+
+def read_env_file(path: str) -> dict[str, str]:
+    """Lê um arquivo .env (CHAVE=valor, com ou sem BOM); sem arquivo, devolve {}. Em chave repetida vale a primeira."""
+    values: dict[str, str] = {}
+    if not path or not os.path.exists(path):
+        return values
+    with open(path, encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    return values
+
+
+def client_from_env(role: str, env: Mapping[str, str]) -> LLMClient:
+    """Cliente do gerador (`gen`) ou do juiz (`judge`) a partir das variáveis DFC_* do .env."""
+    prefix = "DFC_GEN_" if role == "gen" else "DFC_JUDGE_"
+    base = env.get("DFC_LLM_BASE_URL", DEFAULT_BASE_URL)
+    key = env.get("DFC_LLM_API_KEY") or env.get("OPENROUTER_API_KEY")
+    model = env.get(prefix + "MODEL")
+    local = "localhost" in base or "127.0.0.1" in base
+    if not model or (not key and not local):
+        raise ConfigError(f"Defina DFC_LLM_API_KEY e {prefix}MODEL (veja .env.example)", missing=True)
+    raw_extra = env.get(prefix + "EXTRA_BODY") or env.get("DFC_EXTRA_BODY")
+    try:
+        extra = json.loads(raw_extra) if raw_extra else None
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"{prefix}EXTRA_BODY não é um JSON válido: {e}") from e
+    if extra is not None and not isinstance(extra, dict):
+        raise ConfigError(f"{prefix}EXTRA_BODY deve ser um objeto JSON.")
+    temperature = 0.7 if role == "gen" else 0.0
+    return LLMClient(base, key, model, temperature=temperature, json_mode=env.get("DFC_JSON_MODE") == "1", extra_body=extra)
 
 
 def parse_json_loose(text: str) -> dict[str, Any]:

@@ -16,7 +16,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "pipeline"))
 
 from dfc_pipeline import audit, cards, cli, generate, pack, source, validate  # noqa: E402
-from dfc_pipeline.llm import FakeLLM, LLMClient, LLMError, RunAborted, parse_json_loose  # noqa: E402
+from dfc_pipeline.llm import ConfigError, FakeLLM, LLMClient, LLMError, RunAborted, client_from_env, parse_json_loose, read_env_file  # noqa: E402
 from dfc_pipeline.util import read_jsonl, run_parallel, write_jsonl  # noqa: E402
 
 
@@ -277,6 +277,35 @@ class LLMTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {}, clear=True):
                 cli.load_env(path)
                 self.assertEqual((os.environ["DFC_PRIMEIRA"], os.environ["DFC_SEGUNDA"]), ("1", "dois"))
+
+    def test_client_from_env_builds_gen_and_judge_and_reports_missing_settings(self):
+        env = {"DFC_LLM_BASE_URL": "https://exemplo.test/v1", "DFC_LLM_API_KEY": "k", "DFC_GEN_MODEL": "g", "DFC_JUDGE_MODEL": "j", "DFC_JSON_MODE": "1"}
+        gen, judge = client_from_env("gen", env), client_from_env("judge", env)
+        self.assertEqual((gen.model, gen.temperature, gen.json_mode), ("g", 0.7, True))
+        self.assertEqual((judge.model, judge.temperature), ("j", 0.0))
+        for missing in ("DFC_LLM_API_KEY", "DFC_GEN_MODEL"):
+            with self.assertRaises(ConfigError) as ctx:
+                client_from_env("gen", {k: v for k, v in env.items() if k != missing})
+            self.assertTrue(ctx.exception.missing)
+        local = {k: v for k, v in env.items() if k != "DFC_LLM_API_KEY"} | {"DFC_LLM_BASE_URL": "http://localhost:11434/v1"}
+        self.assertIsNone(client_from_env("gen", local).api_key)
+        with self.assertRaises(ConfigError) as ctx:
+            client_from_env("gen", {**env, "DFC_GEN_EXTRA_BODY": "[1]"})
+        self.assertFalse(ctx.exception.missing)
+
+    def test_make_client_without_settings_suggests_dry_run(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.make_client("gen", False)
+        self.assertIn("--dry-run", str(ctx.exception))
+
+    def test_read_env_file_skips_comments_and_keeps_the_first_duplicate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, ".env")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('# c\n\nA=1\nB="dois"\nA=3\nsem igual\n')
+            self.assertEqual(read_env_file(path), {"A": "1", "B": "dois"})
+            self.assertEqual(read_env_file(os.path.join(tmp, "nao-existe")), {})
 
 
 class RunParallelTest(unittest.TestCase):

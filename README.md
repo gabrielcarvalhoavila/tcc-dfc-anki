@@ -10,8 +10,8 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 |---|---|---|---|
 | M0 | Protocolo v1.5 congelado | 20/10 | Feito (v1 a v1.3 em 20/10; v1.4 e v1.5 em 21/10, antes de qualquer sorteio) |
 | M2 | Add-on v0 (só registro) | 27/10 | Feito em 20/10: 12 revisões no Anki 26.05 real conferidas contra o histórico do Anki, 0 divergências em nota, horário, tempo, intervalo anterior e tipo; a resposta desfeita (Ctrl+Z) fica sem par e é marcada na exportação |
-| M1 | Banco de variantes e auditoria de 100 | 28/10 (irmão: 30/10) | Código pronto e testado; API do Gemini configurada e piloto de 40 notas do irmão feito (prompts v4, 91% de aprovação automática); falta gerar o banco completo e auditar |
-| M3 | Add-on v1 (sorteio e exibição) | 30/10 | Código pronto (0.3.0, fichas Cloze com imagem); testado com o motor real do Anki 26.5 sem interface; a 0.2.x foi vista na interface em 20/10 (exibição das variantes, tecla `x`, Ctrl+Z); falta ver as fichas na interface e o banco real (roteiro em [arquitetura](docs/arquitetura.md)) |
+| M1 | Banco de variantes e auditoria de 100 | 28/10 (irmão: 30/10) | Banco gerado em 21/10: 2.727 notas elegíveis, 2.316 com variantes e 9.071 variantes, 90,7% aprovadas na validação automática (custo ≈ US$ 7,6); falta a auditoria humana de 100 variantes (planilha pronta) e empacotar o banco |
+| M3 | Add-on v1 (sorteio e exibição) | 30/10 | Código pronto (0.4.0). A 0.3.0 (fichas Cloze com imagem, tecla `x`, Ctrl+Z, exportação do CSV) foi vista na interface em 21/10 com um banco falso e a coleção do irmão; a 0.4.0 só acrescenta a variante sob demanda (desligada por padrão, fora do estudo); falta o ensaio com o banco real (roteiro em [arquitetura](docs/arquitetura.md)) |
 | M4 | Coleta | 2/11 a 22/11 | |
 | M5 | Análise | 23/11 a 27/11 | Não iniciado |
 | M6 | Entrega do trabalho | 4/12 | |
@@ -22,9 +22,9 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | Pasta | Conteúdo |
 |---|---|
 | `docs/` | [projeto](docs/projeto.md), [fundamentação](docs/fundamentacao.md), [protocolo](docs/protocolo.md) (congelado), [piloto](docs/piloto-relampago.md), [arquitetura](docs/arquitetura.md), [desvios](docs/desvios.md) |
-| `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes) |
+| `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes; a variante sob demanda, que gera variantes de um cartão na hora com o LLM, fica desligada) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
-| `tests/` | 140 testes, sem rede; 16 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
+| `tests/` | 166 testes, sem rede; 16 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |

@@ -68,9 +68,15 @@ try:
 except Exception:
     _log_error()
 
+_live_action = None
+
 
 def _draw_enabled() -> bool:
     return bool(_config().get("draw_enabled", True))
+
+
+def _live_on() -> bool:
+    return bool(_config().get("live_enabled", False))
 
 
 def _window_ok() -> bool:
@@ -292,6 +298,7 @@ def _status() -> None:
         f"Registro: {'ligado' if _enabled() else 'desligado'}\nAgendador: {sched or 'desconhecido'}\n"
         f"Banco de variantes: {bank}\n"
         f"Sorteio: {'ligado' if _draw_enabled() else 'desligado'} (janela {cfg.get('draw_start')} a {cfg.get('draw_end')}; hoje {'dentro' if _window_ok() else 'fora'})\n"
+        f"Variante sob demanda (LLM): {'ligada' if _live_on() else 'desligada'}\n"
         f"Atalho de variante ruim: {key_text}\nErros: {ERR_LOG}"
     )
 
@@ -328,6 +335,54 @@ def _export_notes() -> None:
     tooltip(f"{n} notas exportadas")
 
 
+def _card_record(card) -> dict:
+    note = card.note()
+    return core.note_to_record(card.nid, note.guid, note.note_type()["name"], note.items(), note.tags, [mw.col.decks.name(card.odid or card.did)])
+
+
+@_safe
+def _live_variants() -> None:
+    """Variantes do cartão em revisão, geradas e validadas na hora. Fora do estudo: não grava nota, banco nem evento."""
+    if not _live_on():
+        showInfo("Variante sob demanda desligada: ligue `live_enabled` em Ferramentas > Complementos > DFC Probe > Config.")
+        return
+    card = mw.reviewer.card if mw.state == "review" else None
+    if card is None:
+        tooltip("DFC Probe: abra um cartão na revisão.")
+        return
+    from aqt.operations import QueryOp
+    from aqt.utils import showText
+
+    try:
+        from . import live
+
+        gen, judge = live.build_clients(live.load_env(str(_config().get("live_env_file", ""))))
+        record, card_ord = _card_record(card), card.ord
+    except ImportError:
+        _log_error()
+        showInfo("O add-on está sem os módulos do pipeline: reinstale com scripts/install_addon.ps1 (ou com o .ankiaddon de scripts/package_addon.ps1).")
+        return
+    except Exception as e:
+        showInfo(f"Variante sob demanda não configurada: {e}\n\nAponte `live_env_file` (Config do add-on) para o .env do pipeline, com a chave, DFC_GEN_MODEL e DFC_JUDGE_MODEL.")
+        return
+
+    @_safe
+    def done(result) -> None:
+        showText(live.render_html(result), parent=mw, type="html", title="DFC Probe: variantes do cartão", copyBtn=True, minWidth=640, minHeight=520)
+
+    def failed(exc) -> None:
+        showInfo(f"Não foi possível gerar as variantes: {exc}")
+
+    op = QueryOp(parent=mw, op=lambda _col: live.generate_variants(record, gen, judge, card_ord=card_ord), success=done)
+    op.failure(failed).with_progress("DFC Probe: gerando e validando as variantes...").run_in_background()
+
+
+@_safe
+def _on_config_updated(conf) -> None:
+    if _live_action is not None:
+        _live_action.setVisible(bool(conf.get("live_enabled", False)))
+
+
 def _setup_menu() -> None:
     menu = mw.form.menuTools.addMenu("DFC Probe")
     toggle = QAction("Registro ativo", mw)
@@ -350,6 +405,12 @@ def _setup_menu() -> None:
         action = QAction(label, mw)
         action.triggered.connect(lambda _checked=False, f=fn: f())
         menu.addAction(action)
+    global _live_action
+    _live_action = QAction("Gerar variantes do cartão atual (LLM)...", mw)
+    _live_action.triggered.connect(lambda _checked=False: _live_variants())
+    _live_action.setVisible(_live_on())
+    menu.addAction(_live_action)
+    mw.addonManager.setConfigUpdatedAction(__name__, _on_config_updated)
 
 
 _safe(_setup_menu)()

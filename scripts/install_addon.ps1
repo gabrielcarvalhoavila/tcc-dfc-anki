@@ -14,6 +14,8 @@ if ($LASTEXITCODE -ge 8) {
     Write-Error "Falha ao copiar (robocopy $LASTEXITCODE)"
     exit 1
 }
+. (Join-Path $PSScriptRoot "vendor_pipeline.ps1")
+Copy-PipelineInto -Root $root -AddonDir $dst
 Write-Output "Add-on copiado para $dst"
 Write-Output "Reinicie o Anki e confira em Ferramentas > DFC Probe > Status."
 exit 0

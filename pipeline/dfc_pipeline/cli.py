@@ -13,44 +13,23 @@ from typing import Any
 from . import ankiconnect, audit, pack, source, survey
 from .cards import Card, parse_note, summarize
 from .generate import generate
-from .llm import FakeLLM, LLMClient, LLMError, RunAborted, parse_json_loose
+from .llm import ConfigError, FakeLLM, LLMError, RunAborted, client_from_env, parse_json_loose, read_env_file
 from .util import read_jsonl, write_jsonl
 from .validate import LEAK_MAX, MIN_DISTANCE, MIN_DISTANCE_REORDER, validate
 
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-
 
 def load_env(path: str = ".env") -> None:
-    if not os.path.exists(path):
-        return
-    with open(path, encoding="utf-8-sig") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    for key, value in read_env_file(path).items():
+        os.environ.setdefault(key, value)
 
 
 def make_client(role: str, dry_run: bool) -> Any:
     if dry_run:
         return FakeLLM()
-    prefix = "DFC_GEN_" if role == "gen" else "DFC_JUDGE_"
-    base = os.environ.get("DFC_LLM_BASE_URL", DEFAULT_BASE_URL)
-    key = os.environ.get("DFC_LLM_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
-    model = os.environ.get(prefix + "MODEL")
-    local = "localhost" in base or "127.0.0.1" in base
-    if not model or (not key and not local):
-        raise SystemExit(f"Defina DFC_LLM_API_KEY e {prefix}MODEL (veja .env.example), ou use --dry-run para testar o fluxo sem LLM.")
-    raw_extra = os.environ.get(prefix + "EXTRA_BODY") or os.environ.get("DFC_EXTRA_BODY")
     try:
-        extra = json.loads(raw_extra) if raw_extra else None
-    except json.JSONDecodeError as e:
-        raise SystemExit(f"{prefix}EXTRA_BODY não é um JSON válido: {e}")
-    if extra is not None and not isinstance(extra, dict):
-        raise SystemExit(f"{prefix}EXTRA_BODY deve ser um objeto JSON.")
-    temperature = 0.7 if role == "gen" else 0.0
-    return LLMClient(base, key, model, temperature=temperature, json_mode=os.environ.get("DFC_JSON_MODE") == "1", extra_body=extra)
+        return client_from_env(role, os.environ)
+    except ConfigError as e:
+        raise SystemExit(f"{e}, ou use --dry-run para testar o fluxo sem LLM." if e.missing else str(e))
 
 
 def load_cards(path: str) -> list[Card]:

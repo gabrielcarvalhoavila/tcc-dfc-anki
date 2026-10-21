@@ -5,5 +5,7 @@
   "draw_end": "2026-11-22",
   "bad_shortcut": "x",
   "allow_fake_bank": false,
-  "anonymize_export": false
+  "anonymize_export": false,
+  "live_enabled": false,
+  "live_env_file": ""
 }
