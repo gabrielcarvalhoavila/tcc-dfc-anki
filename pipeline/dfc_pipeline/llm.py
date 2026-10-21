@@ -44,7 +44,7 @@ class LLMClient:
         }
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": "dfc-pipeline/1.0"}  # o padrão do urllib é recusado por alguns provedores
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         data = json.dumps(body).encode("utf-8")

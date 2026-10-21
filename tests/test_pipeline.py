@@ -126,12 +126,13 @@ class LLMTest(unittest.TestCase):
         return f"http://127.0.0.1:{server.server_port}/v1"
 
     def test_retry_on_429_then_success_and_auth_header(self):
-        seen = {"calls": 0, "auth": None}
+        seen = {"calls": 0, "auth": None, "agent": None}
 
         class H(http.server.BaseHTTPRequestHandler):
             def do_POST(self):
                 seen["calls"] += 1
                 seen["auth"] = self.headers.get("Authorization")
+                seen["agent"] = self.headers.get("User-Agent")
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 if seen["calls"] == 1:
                     self.send_response(429)
@@ -153,6 +154,7 @@ class LLMTest(unittest.TestCase):
         out = client.chat([{"role": "user", "content": "oi"}])
         self.assertEqual((out["text"], out["usage"], out["model"]), ('{"ok": true}', {"total_tokens": 7}, "m1"))
         self.assertEqual((seen["calls"], sleeps, seen["auth"]), (2, [0.0], "Bearer chave-teste"))
+        self.assertTrue(seen["agent"].startswith("dfc-pipeline/"))
 
     def test_client_error_is_not_retried(self):
         calls = []

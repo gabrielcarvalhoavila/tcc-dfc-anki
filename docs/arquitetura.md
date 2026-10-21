@@ -54,7 +54,7 @@ Instalar: feche o Anki, rode `.\scripts\install_addon.ps1` e abra o Anki. Para o
 
 ## Pipeline
 
-Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em `.env` (modelo em `.env.example`).
+Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em `.env` (modelo em `.env.example`). O provedor é qualquer API compatível com a de chat da OpenAI (OpenRouter, Maritaca, Gemini etc.): muda só `DFC_LLM_BASE_URL`, a chave e os IDs dos modelos.
 
 | Comando | O que faz |
 |---|---|
