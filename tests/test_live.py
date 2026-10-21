@@ -2,6 +2,7 @@
 import ast
 import importlib
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -131,24 +132,46 @@ class RenderTest(unittest.TestCase):
 
 
 class ConfigTest(unittest.TestCase):
-    def test_load_env_merges_the_file_with_ambient_dfc_variables(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, ".env")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write("DFC_GEN_MODEL=g\nDFC_LLM_API_KEY=do-arquivo\n")
-            env = L.load_env(path, {"DFC_LLM_API_KEY": "do-ambiente", "PATH": "x"})
-            self.assertEqual(env, {"DFC_GEN_MODEL": "g", "DFC_LLM_API_KEY": "do-ambiente"})
-            with self.assertRaises(FileNotFoundError):
-                L.load_env(os.path.join(tmp, "nao-existe.env"), {})
-        self.assertEqual(L.load_env("", {"DFC_X": "1", "OUTRA": "2"}), {"DFC_X": "1"})
+    cfg = {
+        "live_api_key": " chave ",
+        "live_base_url": "https://exemplo.test/v1",
+        "live_gen_model": "g",
+        "live_gen_extra_body": {"reasoning_effort": "low"},
+        "live_judge_model": "j",
+        "live_judge_extra_body": {},
+    }
 
-    def test_clients_wait_less_than_in_the_batch_run(self):
-        env = {"DFC_LLM_BASE_URL": "https://exemplo.test/v1", "DFC_LLM_API_KEY": "k", "DFC_GEN_MODEL": "g", "DFC_JUDGE_MODEL": "j"}
-        gen, judge = L.build_clients(env)
-        self.assertEqual([(c.max_retries, c.timeout) for c in (gen, judge)], [(1, 60), (1, 60)])
-        self.assertEqual((gen.model, judge.model), ("g", "j"))
-        with self.assertRaises(ConfigError):
-            L.build_clients({})
+    def test_clients_come_from_the_addon_config_and_wait_less_than_in_the_batch_run(self):
+        gen, judge = L.build_clients(self.cfg)
+        self.assertEqual([(c.base_url, c.api_key, c.model) for c in (gen, judge)], [("https://exemplo.test/v1", "chave", "g"), ("https://exemplo.test/v1", "chave", "j")])
+        self.assertEqual([(c.temperature, c.json_mode, c.max_retries, c.timeout) for c in (gen, judge)], [(0.7, True, 1, 60), (0.0, True, 1, 60)])
+        self.assertEqual((gen.extra_body, judge.extra_body), ({"reasoning_effort": "low"}, {}))
+
+    def test_missing_or_invalid_settings_name_the_field(self):
+        cases = [
+            ({"live_api_key": ""}, "live_api_key"),
+            ({"live_api_key": None}, "live_api_key"),
+            ({"live_base_url": ""}, "live_base_url"),
+            ({"live_gen_model": " "}, "live_gen_model"),
+            ({"live_judge_model": None}, "live_judge_model"),
+            ({"live_gen_extra_body": [1]}, "live_gen_extra_body"),
+        ]
+        for over, name in cases:
+            with self.assertRaises(ConfigError) as ctx:
+                L.build_clients({**self.cfg, **over})
+            self.assertIn(name, str(ctx.exception))
+
+    def test_a_local_server_needs_no_key(self):
+        gen, _judge = L.build_clients({**self.cfg, "live_api_key": "", "live_base_url": "http://localhost:11434/v1"})
+        self.assertIsNone(gen.api_key)
+
+    def test_shipped_defaults_are_the_study_models_and_leave_the_key_empty(self):
+        with open(os.path.join(ROOT, "addon", "dfc_probe", "config.json"), encoding="utf-8") as f:
+            defaults = json.load(f)
+        self.assertEqual((defaults["live_enabled"], defaults["live_api_key"]), (False, ""))
+        gen, judge = L.build_clients({**defaults, "live_api_key": "k"})
+        self.assertEqual((gen.model, judge.model), ("gemini-3.8-flash", "gemini-3.5-flash-lite"))
+        self.assertEqual((gen.extra_body, judge.extra_body), ({"reasoning_effort": "low"}, {"reasoning_effort": "minimal"}))
 
 
 class VendoredPipelineTest(unittest.TestCase):

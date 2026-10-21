@@ -10,6 +10,7 @@ import urllib.request
 from typing import Any, Callable, Mapping, Optional
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+GEN_TEMPERATURE, JUDGE_TEMPERATURE = 0.7, 0.0
 
 
 class LLMError(RuntimeError):
@@ -136,7 +137,7 @@ def client_from_env(role: str, env: Mapping[str, str]) -> LLMClient:
         raise ConfigError(f"{prefix}EXTRA_BODY não é um JSON válido: {e}") from e
     if extra is not None and not isinstance(extra, dict):
         raise ConfigError(f"{prefix}EXTRA_BODY deve ser um objeto JSON.")
-    temperature = 0.7 if role == "gen" else 0.0
+    temperature = GEN_TEMPERATURE if role == "gen" else JUDGE_TEMPERATURE
     return LLMClient(base, key, model, temperature=temperature, json_mode=env.get("DFC_JSON_MODE") == "1", extra_body=extra)
 
 

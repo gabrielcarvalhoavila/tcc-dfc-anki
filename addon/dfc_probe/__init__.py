@@ -79,6 +79,12 @@ def _live_on() -> bool:
     return bool(_config().get("live_enabled", False))
 
 
+def _live_status(cfg: dict) -> str:
+    if not cfg.get("live_enabled", False):
+        return "desligada"
+    return "ligada (chave " + ("preenchida" if str(cfg.get("live_api_key") or "").strip() else "ausente") + ")"
+
+
 def _window_ok() -> bool:
     cfg = _config()
     return variants.in_window(datetime.date.today(), str(cfg.get("draw_start", "2026-11-02")), str(cfg.get("draw_end", "2026-11-22")))
@@ -298,7 +304,7 @@ def _status() -> None:
         f"Registro: {'ligado' if _enabled() else 'desligado'}\nAgendador: {sched or 'desconhecido'}\n"
         f"Banco de variantes: {bank}\n"
         f"Sorteio: {'ligado' if _draw_enabled() else 'desligado'} (janela {cfg.get('draw_start')} a {cfg.get('draw_end')}; hoje {'dentro' if _window_ok() else 'fora'})\n"
-        f"Variante sob demanda (LLM): {'ligada' if _live_on() else 'desligada'}\n"
+        f"Variante sob demanda (LLM): {_live_status(cfg)}\n"
         f"Atalho de variante ruim: {key_text}\nErros: {ERR_LOG}"
     )
 
@@ -356,14 +362,14 @@ def _live_variants() -> None:
     try:
         from . import live
 
-        gen, judge = live.build_clients(live.load_env(str(_config().get("live_env_file", ""))))
+        gen, judge = live.build_clients(_config())
         record, card_ord = _card_record(card), card.ord
     except ImportError:
         _log_error()
         showInfo("O add-on está sem os módulos do pipeline: reinstale com scripts/install_addon.ps1 (ou com o .ankiaddon de scripts/package_addon.ps1).")
         return
     except Exception as e:
-        showInfo(f"Variante sob demanda não configurada: {e}\n\nAponte `live_env_file` (Config do add-on) para o .env do pipeline, com a chave, DFC_GEN_MODEL e DFC_JUDGE_MODEL.")
+        showInfo(f"Não foi possível preparar a variante sob demanda: {e}.\n\nConfira live_api_key, live_base_url e os modelos em Ferramentas > Complementos > DFC Probe > Config.")
         return
 
     @_safe

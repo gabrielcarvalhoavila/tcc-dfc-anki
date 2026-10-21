@@ -7,5 +7,10 @@
   "allow_fake_bank": false,
   "anonymize_export": false,
   "live_enabled": false,
-  "live_env_file": ""
+  "live_api_key": "",
+  "live_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+  "live_gen_model": "gemini-3.8-flash",
+  "live_gen_extra_body": {"reasoning_effort": "low"},
+  "live_judge_model": "gemini-3.5-flash-lite",
+  "live_judge_extra_body": {"reasoning_effort": "minimal"}
 }

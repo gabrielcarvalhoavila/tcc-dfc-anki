@@ -686,19 +686,15 @@ class SmokeTest(unittest.TestCase):
         self.assertIn("abra um cartão", self.messages[-1])
         self.assertEqual(self.texts, [])
 
-    def test_live_reports_a_missing_env_file_and_missing_settings(self):
-        self.cfg["live_enabled"] = True
-        self.cfg["live_env_file"] = os.path.join(self.tmp.name, "nao-existe.env")
+    def test_live_reports_a_missing_key_without_calling_the_llm(self):
+        self.cfg.update(live_enabled=True, live_api_key="", live_base_url="https://exemplo.test/v1", live_gen_model="g", live_judge_model="j")
         self.click_live()
-        self.assertIn("arquivo não encontrado", self.messages[-1])
-        empty_env = os.path.join(self.tmp.name, ".env")
-        open(empty_env, "w").close()
-        self.cfg["live_env_file"] = empty_env
-        with mock.patch.dict(os.environ):
-            for key in [k for k in os.environ if k.startswith("DFC_")]:
-                del os.environ[key]
-            self.click_live()
-        self.assertIn("Defina DFC_LLM_API_KEY", self.messages[-1])
+        self.assertIn("live_api_key", self.messages[-1])
+        self.assertEqual(self.texts, [])
+        self.cfg["live_api_key"] = "chave"
+        self.cfg["live_gen_model"] = ""
+        self.click_live()
+        self.assertIn("live_gen_model", self.messages[-1])
         self.assertEqual(self.texts, [])
 
     def test_live_failure_is_shown_to_the_user(self):
@@ -710,12 +706,16 @@ class SmokeTest(unittest.TestCase):
         self.assertIn("rede caiu", self.messages[-1])
         self.assertEqual(self.texts, [])
 
-    def test_status_reports_the_live_switch(self):
+    def test_status_reports_the_live_switch_and_whether_the_key_is_filled_without_showing_it(self):
         self.menu_action("Status").triggered.emit(False)
         self.assertIn("Variante sob demanda (LLM): desligada", self.messages[-1])
         self.cfg["live_enabled"] = True
         self.menu_action("Status").triggered.emit(False)
-        self.assertIn("Variante sob demanda (LLM): ligada", self.messages[-1])
+        self.assertIn("Variante sob demanda (LLM): ligada (chave ausente)", self.messages[-1])
+        self.cfg["live_api_key"] = "segredo-123"
+        self.menu_action("Status").triggered.emit(False)
+        self.assertIn("ligada (chave preenchida)", self.messages[-1])
+        self.assertNotIn("segredo-123", self.messages[-1])
 
 
 if __name__ == "__main__":

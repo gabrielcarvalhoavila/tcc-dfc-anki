@@ -1,25 +1,24 @@
 """Variantes sob demanda: a geração e a validação do pipeline (mesmos prompts e checagens) para um cartão só.
 
-Fora do estudo: nada é gravado na nota, no banco de variantes nem nos eventos. O texto do cartão vai ao provedor do .env.
+Fora do estudo: nada é gravado na nota, no banco de variantes nem nos eventos. O texto do cartão vai ao provedor configurado.
 Sem imports do Anki, para testar sem interface.
 """
 from __future__ import annotations
 
 import html
-import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 try:  # instalado: o pipeline vem copiado para dfc_probe/dfc_pipeline (scripts/vendor_pipeline.ps1)
     from .dfc_pipeline.cards import parse_note
     from .dfc_pipeline.generate import generate_one
-    from .dfc_pipeline.llm import client_from_env, read_env_file
+    from .dfc_pipeline.llm import GEN_TEMPERATURE, JUDGE_TEMPERATURE, ConfigError, LLMClient
     from .dfc_pipeline.prompts import GEN_PROMPT_VERSION, JUDGE_PROMPT_VERSION
     from .dfc_pipeline.validate import decide, judge_variant
 except ImportError:  # repositório e testes: PYTHONPATH=pipeline
     from dfc_pipeline.cards import parse_note
     from dfc_pipeline.generate import generate_one
-    from dfc_pipeline.llm import client_from_env, read_env_file
+    from dfc_pipeline.llm import GEN_TEMPERATURE, JUDGE_TEMPERATURE, ConfigError, LLMClient
     from dfc_pipeline.prompts import GEN_PROMPT_VERSION, JUDGE_PROMPT_VERSION
     from dfc_pipeline.validate import decide, judge_variant
 
@@ -58,26 +57,24 @@ REASON_LABELS = {
 }
 
 
-def load_env(path: str, environ: Optional[Mapping[str, str]] = None) -> dict[str, str]:
-    """Variáveis do .env do pipeline; as do ambiente do Anki valem mais, como no pipeline."""
-    env: dict[str, str] = {}
-    path = os.path.expanduser(path.strip()) if path else ""
-    if path:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"arquivo não encontrado: {path}")
-        env = read_env_file(path)
-    for key, value in (os.environ if environ is None else environ).items():
-        if key.startswith("DFC_") or key == "OPENROUTER_API_KEY":
-            env[key] = value
-    return env
-
-
-def build_clients(env: Mapping[str, str]) -> tuple[Any, Any]:
-    """Gerador e juiz do .env, com menos tentativas e prazo menor que no lote: aqui uma pessoa espera a resposta."""
-    gen, judge = client_from_env("gen", env), client_from_env("judge", env)
-    for client in (gen, judge):
-        client.max_retries, client.timeout = 1, 60
-    return gen, judge
+def build_clients(cfg: Mapping[str, Any]) -> tuple[Any, Any]:
+    """Gerador e juiz da configuração do add-on (chave e modelos do próprio usuário), com menos tentativas e prazo menor que no lote: aqui uma pessoa espera."""
+    base = str(cfg.get("live_base_url") or "").strip()
+    key = str(cfg.get("live_api_key") or "").strip()
+    if not base:
+        raise ConfigError("preencha live_base_url")
+    if not key and "localhost" not in base and "127.0.0.1" not in base:
+        raise ConfigError("preencha live_api_key")
+    clients = []
+    for role, temperature in (("gen", GEN_TEMPERATURE), ("judge", JUDGE_TEMPERATURE)):
+        model = str(cfg.get(f"live_{role}_model") or "").strip()
+        extra = cfg.get(f"live_{role}_extra_body") or None
+        if not model:
+            raise ConfigError(f"preencha live_{role}_model")
+        if extra is not None and not isinstance(extra, dict):
+            raise ConfigError(f"live_{role}_extra_body deve ser um objeto JSON")
+        clients.append(LLMClient(base, key or None, model, temperature=temperature, timeout=60, max_retries=1, json_mode=True, extra_body=extra))
+    return clients[0], clients[1]
 
 
 def generate_variants(record: dict[str, Any], gen_client: Any, judge_client: Any, card_ord: int = 0, workers: int = 4) -> dict[str, Any]:
@@ -153,7 +150,7 @@ def render_html(result: dict[str, Any]) -> str:
     m = result["models"]
     parts += [
         "<hr>",
-        f"<p><small>Gerador {_p(str(m['gen']))} ({m['gen_prompt']}) e juiz {_p(str(m['judge']))} ({m['judge_prompt']}), conforme o .env; "
+        f"<p><small>Gerador {_p(str(m['gen']))} ({m['gen_prompt']}) e juiz {_p(str(m['judge']))} ({m['judge_prompt']}), conforme a configuração; "
         "prompts e checagens iguais aos do estudo, sem auditoria humana. Nada foi gravado: nota, banco de variantes e eventos ficam como estavam.</small></p>",
     ]
     return "".join(parts)
