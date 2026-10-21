@@ -12,7 +12,7 @@ from typing import Any, Callable, Optional
 from . import source
 from .cards import Card, parse_note
 
-WINDOW_DAYS = 21  # janela do estudo: 2/11 a 22/11 (protocolo, seção 5)
+WINDOW_DAYS = 26  # janela do estudo: 28/10 a 22/11 (protocolo, seção 5)
 
 
 def anki_day(ms: int, rollover_hour: int = 4) -> datetime.date:

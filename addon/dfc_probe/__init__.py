@@ -88,7 +88,7 @@ def _live_status(cfg: dict) -> str:
 
 def _window_ok() -> bool:
     cfg = _config()
-    return variants.in_window(datetime.date.today(), str(cfg.get("draw_start", "2026-11-02")), str(cfg.get("draw_end", "2026-11-22")))
+    return variants.in_window(datetime.date.today(), str(cfg.get("draw_start", "2026-10-28")), str(cfg.get("draw_end", "2026-11-22")))
 
 
 # Teclas globais do Anki (setupKeys, aqt/main.py): valem em todas as telas e, repetidas, anulam o atalho do add-on.

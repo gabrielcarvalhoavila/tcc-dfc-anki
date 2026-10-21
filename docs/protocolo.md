@@ -1,6 +1,6 @@
 # Protocolo e plano: dependência da forma do cartão (DFC)
 
-**Versão 1.5, 2026-10-21. Congelado** com a tag Git `protocolo-v1.5` (as `protocolo-v1` a `protocolo-v1.4` ficam como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (2/11) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
+**Versão 1.6, 2026-10-21. Congelado** com a tag Git `protocolo-v1.6` (as `protocolo-v1` a `protocolo-v1.5` ficam como histórico; ver "Histórico de versões"). Mudanças até o primeiro sorteio (28/10) geram nova versão e nova tag; depois disso, qualquer mudança é um desvio registrado em [`desvios.md`](desvios.md) (seção 13). Contexto e evidências: [fundamentação](fundamentacao.md). Hipóteses e objetivos: [projeto](projeto.md). Piloto: [piloto-relampago](piloto-relampago.md).
 
 **Como ler.** **(premissa)** = número meu, de calibração, não verificado em dados do estudo. † = vem da minha memória, não verifiquei. As datas da seção 11 são limites derivados da entrega (4/12) e da apresentação (18/12), não estimativas de esforço.
 
@@ -14,6 +14,7 @@
 | v1.3 | 20/10/2026 | Antes de qualquer sorteio e de qualquer variante gerada. O Cloze passa de dois para cinco tipos de variante, cada um mudando uma dimensão da forma: `paraphrase` (palavras), `reorder` (ordem dos itens), `cue_swap` (palavras iniciais e rótulos), `pergunta` (formato) e `sem_imagem` (imagem). Os quatro de texto são gerados pelo LLM e a `sem_imagem` continua determinística (seção 6.1). A validação trata o `reorder` à parte, pela ordem das palavras e não pelo conjunto delas (6.2); a análise por tipo ganha grupos por dimensão e a ressalva de que nem todo tipo existe para toda nota (7). Hipóteses, desfecho, elegibilidade, definição de suspeito e limiares não mudam. |
 | v1.4 | 21/10/2026 | Antes de qualquer sorteio. Já houve geração, mas só de piloto: 40 notas do irmão, cujas variantes foram descartadas e não entram no banco (6.1). (1) Provedor: API do Gemini (Google), em conta paga pré-paga, no lugar do OpenRouter (o pagamento foi recusado); gerador `gemini-3.8-flash` e juiz `gemini-3.5-flash-lite`, com parâmetros fixos e registrados (6.1). (2) Prompts `gen-v4` e `judge-v4`, ajustados depois do piloto: contexto de vestibular brasileiro (só para a terminologia); o `cue_swap` troca o título e os rótulos por sinônimos ou reformulações fiéis do mesmo assunto, sem acrescentar fatos; a `pergunta` fica autônoma, com uma interrogação por lacuna. (3) O juiz do Cloze ganha o critério `same_topic` (o título e os rótulos tratam do mesmo assunto), com motivo de reprovação `topic_changed` (6.2). Hipóteses, desfecho, elegibilidade, definição de suspeito e limiares não mudam. |
 | v1.5 | 21/10/2026 | Antes de qualquer sorteio. Hipóteses, desfecho, elegibilidade, definição de suspeito, limiares e prompts não mudam. (1) O universo do banco fica explícito: todos os baralhos exceto os de inglês (consulta de 21/10: 5.121 notas, 2.727 elegíveis; 4.2). (2) O registro do irmão não é anonimizado, porque os dados ficam só com o autor e o irmão; se forem compartilhados com terceiros, anonimizar antes (6.6 e 10). (3) O escore E3 ganha definição operacional: o tamanho do enunciado e o prefixo mínimo identificador vêm do texto exportado e se ligam ao registro por `note_id`; o teste é a AUC contra o baseline `reps`, exploratório (3 e 6.3.1). |
+| v1.6 | 21/10/2026 | Antes de qualquer sorteio. Hipóteses, desfecho, elegibilidade, definição de suspeito, limiares, prompts e banco de variantes não mudam. (1) A janela do estudo começa em 28/10, e não em 2/11, e segue até 22/11 (26 dias): o banco ficou pronto antes do previsto e cada dia a mais rende ≈ 40 eventos sorteáveis (seções 4.1, 5 e 11). Se tudo ficar pronto antes, o início pode ser antecipado por nova versão, desde que antes do primeiro sorteio. (2) A auditoria humana de ≥ 100 variantes é só do autor, sem as ≈ 30 do irmão: não haverá medida de concordância entre avaliadores, e isso é declarado como limitação (6.2 e 9). |
 
 ---
 
@@ -65,7 +66,7 @@ No [experimento-relâmpago](piloto-relampago.md), 12 conceitos que a pessoa sabi
 | Irmão (desktop) | **Participante principal**: fonte da maior parte dos eventos de suspeitos; sem ele não há estudo (plano B na seção 12) | Estudante de vestibular; coleção madura e ativa (≈ 28.900 notas, ≈ 150 respostas por dia estudado, retenção ≈ 92%, levantamento de 20/10, só agregados). O autor confirmou em 20/10 o consentimento, o calendário das provas e o uso do Anki no desktop |
 | Autor (desktop) | Secundário: ensaio do add-on e dados adicionais | Coleção nova de Engenharia de Software, AWS Skill Builder, HTTPS e subconjunto reativado da Faculdade |
 
-**Gargalo: eventos de suspeitos.** Contagens de 20/10, por consultas ao Anki do autor: no AWS Skill Builder há 21 notas com ≥ 5 revisões e 0 lapsos (61 com ≥ 4); HTTPS e Comunicação/Persuasão não têm nenhuma com ≥ 5. A Faculdade tem 263 notas sem imagem com ≥ 5 revisões e 0 lapsos (antes de filtrar LaTeX e conteúdo não conceitual), mas estão paradas há muito tempo e geram muito esquecimento. Cartões novos demoram a virar suspeitos. Por isso o irmão é o participante principal. O levantamento de 20/10 na coleção dele (comando `survey`, só agregados, sem texto de cartão) mostra 2.755 respostas nos 28 dias anteriores, 58% delas em cartões que o add-on sortearia pelas regras desta versão: ≈ 1.320 eventos, ≈ 730 de suspeitos pelo histórico. Se a rotina continuar igual, a janela de 21 dias renderia ≈ 990 eventos (≈ 550 de suspeitos), perto do alvo da seção 8; com as regras da v1.1 (só texto, uma lacuna) seriam ≈ 50 (≈ 16 de suspeitos), e foi isso que motivou a v1.2. É projeção, não garantia: depende de ele manter o ritmo de estudo (o calendário das provas pode mudá-lo) e de o banco cobrir os cartões que vencerem; vale o número observado. Sem o irmão (ou outros voluntários), o resultado provável de H2 é "inconclusivo", e o protocolo já prevê isso (seção 8.1).
+**Gargalo: eventos de suspeitos.** Contagens de 20/10, por consultas ao Anki do autor: no AWS Skill Builder há 21 notas com ≥ 5 revisões e 0 lapsos (61 com ≥ 4); HTTPS e Comunicação/Persuasão não têm nenhuma com ≥ 5. A Faculdade tem 263 notas sem imagem com ≥ 5 revisões e 0 lapsos (antes de filtrar LaTeX e conteúdo não conceitual), mas estão paradas há muito tempo e geram muito esquecimento. Cartões novos demoram a virar suspeitos. Por isso o irmão é o participante principal. O levantamento de 20/10 na coleção dele (comando `survey`, só agregados, sem texto de cartão) mostra 2.755 respostas nos 28 dias anteriores, 58% delas em cartões que o add-on sortearia pelas regras desta versão: ≈ 1.320 eventos, ≈ 730 de suspeitos pelo histórico. Se a rotina continuar igual, a janela de 26 dias (28/10 a 22/11) renderia ≈ 1.220 eventos (≈ 680 de suspeitos) e, descontadas as notas sem variante aprovada no banco (≈ 16% das elegíveis na geração de 21/10, antes da auditoria), ≈ 1.030 eventos sorteáveis, perto do alvo da seção 8; com as regras da v1.1 (só texto, uma lacuna) seriam ≈ 50 (≈ 16 de suspeitos), e foi isso que motivou a v1.2. É projeção, não garantia: depende de ele manter o ritmo de estudo (o calendário das provas pode mudá-lo: o Enem 2026 é em 8 e 15/11, dentro da janela) e de o banco cobrir os cartões que vencerem; vale o número observado. Sem o irmão (ou outros voluntários), o resultado provável de H2 é "inconclusivo", e o protocolo já prevê isso (seção 8.1).
 
 ### 4.2 Elegibilidade do cartão
 
@@ -79,7 +80,7 @@ A elegibilidade estrutural é checada pelo pipeline; "conceitual" e "o texto soz
 
 ### 4.3 Reativação controlada da Faculdade
 
-Descongelar um subconjunto de cartões de texto elegíveis em ritmo fixo de 25 por dia a partir de 2/11 (o ritmo real é registrado) para gerar eventos "devidos". Cartões parados há mais de um ano falham muito por esquecimento nos dois braços (no piloto, 14 de 41 foram lembrados); entram com covariáveis de intervalo e de dias desde a última revisão e pesam mais nos controles e nas análises exploratórias.
+Descongelar um subconjunto de cartões de texto elegíveis em ritmo fixo de 25 por dia a partir de 28/10, o início da janela (o ritmo real é registrado) para gerar eventos "devidos". Cartões parados há mais de um ano falham muito por esquecimento nos dois braços (no piloto, 14 de 41 foram lembrados); entram com covariáveis de intervalo e de dias desde a última revisão e pesam mais nos controles e nas análises exploratórias.
 
 ---
 
@@ -87,7 +88,7 @@ Descongelar um subconjunto de cartões de texto elegíveis em ritmo fixo de 25 p
 
 | Termo | Definição |
 |---|---|
-| Janela | Revisões de 2/11 a 22/11/2026 (inclusive). Antes de 2/11 o add-on só registra; o sorteio é ligado em 2/11 |
+| Janela | Revisões de 28/10 a 22/11/2026 (inclusive). Antes de 28/10 o add-on só registra; o sorteio é ligado em 28/10 |
 | Evento | Uma revisão, no desktop com o add-on, de cartão elegível cuja revisão anterior foi em outro dia do Anki, com sorteio registrado e resposta registrada, dentro da janela |
 | Exposição do mesmo dia | Revisão no mesmo dia do Anki da revisão anterior do cartão (passos de aprendizado do primeiro dia, cartão que reaparece depois de um Again). Mostra o original, é registrada com `same_day = 1`, não é sorteada e não é evento |
 | Falha | Resposta "Again"; "Hard", "Good" e "Easy" contam como sucesso |
@@ -141,7 +142,7 @@ LLM pela API do Gemini (Google), em conta paga pré-paga (na camada paga o conte
 ### 6.2 Validação
 
 - **Automática:** outro modelo (o juiz) confere se a resposta esperada responde à variante (em Cloze, a de cada lacuna), se há resposta alternativa plausível, se a variante entrega a resposta, se pergunta o mesmo que o original, o idioma e, no Cloze, se o título e os rótulos continuam tratando do mesmo assunto (`same_topic`); checagem lexical de distância mínima do original (pelo conjunto de palavras; no `reorder`, pela ordem delas, contando as lacunas numeradas, porque uma reordenação pura não muda o conjunto) e de vazamento (em Cloze, sem contar os marcadores das lacunas) e de marcadores: cada lacuna aparece uma vez, sem marcas de template e na ordem do original (no `reorder`, em qualquer ordem), e a `pergunta` tem ao menos uma interrogação.
-- **Humana:** amostra de ≥ 100 variantes aprovadas na validação automática, estratificada por tipo, revisada pelo autor (e ~30 pelo irmão). Critério: resposta preservada, sem ambiguidade, sem vazamento. A `sem_imagem` não passa pelo LLM e entra na amostra com a pergunta "só com o texto, ainda dá para responder o cartão?"; se não, a imagem não era ilustrativa e a variante é inválida. Alimenta H1. A taxa de aprovação automática é reportada à parte.
+- **Humana:** amostra de ≥ 100 variantes aprovadas na validação automática, estratificada por tipo, revisada só pelo autor (um avaliador; sem medida de concordância, ver seção 9). Critério: resposta preservada, sem ambiguidade, sem vazamento. A `sem_imagem` não passa pelo LLM e entra na amostra com a pergunta "só com o texto, ainda dá para responder o cartão?"; se não, a imagem não era ilustrativa e a variante é inválida. Alimenta H1. A taxa de aprovação automática é reportada à parte.
 
 ### 6.3 Sorteio e registro (add-on)
 
@@ -224,6 +225,7 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 | Efeito diferente por tipo (a média dilui um efeito que só existe em um) | Estimativas por tipo e por dimensão como exploratórias; o primário é a média, e isso é declarado (seção 7) |
 | Imagem essencial para responder | Regra dos 30 caracteres, auditoria da `sem_imagem` e exclusão de subbaralhos em que a imagem é o enunciado |
 | Viés do experimentador (a hipótese é do autor) | Eventos do irmão como réplica; subamostra digitada com correção cega só se sobrar prazo (6.7) |
+| Auditoria por um só avaliador (o autor, que conhece a hipótese) | A amostra de 100 é fixada e auditada antes de qualquer dado de desfecho, e a planilha não traz desfecho; sem segundo avaliador não há medida de concordância, e isso é declarado como limitação |
 | Poucos suspeitos | Modo sonda; irmão; relatar o menor efeito detectável |
 | Agrupamento (vários eventos por nota e por pessoa) | Erros-padrão por nota e usuário; priorizar mais notas distintas a mais revisões por nota |
 | Generalização | Declarar o escopo: texto conceitual, poucas pessoas (um participante principal) |
@@ -240,15 +242,15 @@ Fora do v1 por prazo. Só entra se sobrar prazo depois de M3: a pessoa digita a 
 
 ## 11. Plano de trabalho (marcos com critério de "pronto")
 
-Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação (**sex 18/12**). A coleta tem janela de 3 semanas (2/11 a 22/11), e tudo que vem antes precisa estar pronto até 30/10, senão entra o plano B (seção 12). A escrita corre em paralelo desde já; só Resultados e Discussão esperam a análise.
+Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação (**sex 18/12**). A coleta vai de 28/10 a 22/11 (26 dias), e tudo que vem antes precisa estar pronto até 27/10, senão entra o plano B (seção 12). Se ficar pronto antes, o início pode ser antecipado por nova versão deste protocolo, antes do primeiro sorteio. A escrita corre em paralelo desde já; só Resultados e Discussão esperam a análise.
 
 | Marco | Entrega | Pronto quando | Data-limite |
 |---|---|---|---|
-| M0 | Protocolo congelado (v1, v1.1, v1.2, v1.3, v1.4 e v1.5) | Arquivo comitado com a tag da versão (a vigente é `protocolo-v1.5`); (opcional) registro no OSF † | **feito em 20/10** (v1.4 e v1.5 em 21/10) |
-| M1 | Banco de variantes offline (E1) | Cartões elegíveis do irmão e do autor processados, depois de um piloto com 20 a 30 cartões reais do irmão; auditoria de ≥ 100 variantes com H1 ≥ 85% | qua 28/10 |
+| M0 | Protocolo congelado (v1 a v1.6) | Arquivo comitado com a tag da versão (a vigente é `protocolo-v1.6`); (opcional) registro no OSF † | **feito em 20/10** (v1.4 a v1.6 em 21/10) |
+| M1 | Banco de variantes offline (E1) | Cartões elegíveis do irmão e do autor processados, depois de um piloto com 20 a 30 cartões reais do irmão; auditoria de ≥ 100 variantes (só o autor) com H1 ≥ 85% | ter 27/10 |
 | M2 | Add-on v0 (só registro) | Registra as revisões do desktop sem quebrar o Anki; conferido contra o histórico de revisões do Anki | ter 27/10 |
-| M3 | Add-on v1 (sorteio e exibição) | Teste de fumaça: a variante aparece nos dois lados, o log bate com o Anki, "variante ruim" e desligar funcionam; instalado no Anki do autor e no do irmão | sex 30/10 |
-| M4 | Coleta | Fim em 22/11 (D1) ou ≈ 1000 eventos; só monitoramento de qualidade e contagem | seg 2/11 a dom 22/11 |
+| M3 | Add-on v1 (sorteio e exibição) | Teste de fumaça: a variante aparece nos dois lados, o log bate com o Anki, "variante ruim" e desligar funcionam; instalado no Anki do autor e no do irmão | ter 27/10 |
+| M4 | Coleta | Fim em 22/11 (D1) ou ≈ 1000 eventos; só monitoramento de qualidade e contagem | qua 28/10 a dom 22/11 |
 | M5 | Análise | Script testado antes com dados do registro; rodado uma vez após D1; tabelas e figuras geradas | seg 23/11 a sex 27/11 |
 | M6 | Entrega do trabalho | Metodologia = este protocolo; resultados, ameaças, limitações | sex 4/12 |
 | M7 | Apresentação | Slides e ensaio | até sex 18/12 |
@@ -260,7 +262,7 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 | Risco | Gatilho | Plano B |
 |---|---|---|
 | Poucos eventos de suspeitos | Abaixo do mínimo na metade da janela | Modo sonda; mais voluntários; relatar o menor efeito detectável |
-| Add-on atrasa | M3 não pronto em 30/10 | Sondas manuais (como no piloto) com registro mínimo; add-on só de registro. A data D1 (22/11) não se move: a janela encurta e o mínimo de 300 eventos continua valendo; abaixo dele, relatório descritivo |
+| Add-on atrasa | M3 não pronto em 27/10 | Sondas manuais (como no piloto) com registro mínimo; add-on só de registro. A data D1 (22/11) não se move: a janela encurta e o mínimo de 300 eventos continua valendo; abaixo dele, relatório descritivo |
 | Variantes ruins | H1 < 85% | Ajustar prompt ou modelo; restringir tipos; repetir a auditoria |
 | Anki atualiza e quebra o add-on | Nova versão instalada | Fixar a 26.05 |
 | Irmão desiste ou estuda bem menos (provas) | Sem dados dele, ou abaixo do mínimo na metade da janela | Mais voluntários; só o autor; E2 descritivo com o menor efeito detectável; ênfase em E1 e em viabilidade |
@@ -271,7 +273,7 @@ Datas-limite derivadas da entrega do trabalho (**sex 4/12**) e da apresentação
 
 ## 13. Registro e desvios
 
-Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1`, `protocolo-v1.2`, `protocolo-v1.3`, `protocolo-v1.4` e `protocolo-v1.5` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
+Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protocolo-v1` antes de qualquer sorteio e revisado como `protocolo-v1.1`, `protocolo-v1.2`, `protocolo-v1.3`, `protocolo-v1.4`, `protocolo-v1.5` e `protocolo-v1.6` (ver "Histórico de versões"), também antes do primeiro sorteio. Mudanças depois do primeiro sorteio entram em [`desvios.md`](desvios.md), com data, o que mudou e por quê. O OSF † é opcional (registro público com data).
 
 ---
 
@@ -284,4 +286,5 @@ Repositório Git criado em 20/10; o protocolo foi comitado e marcado com `protoc
 - **Antes do primeiro sorteio (20/10, v1.3):** o Cloze tem cinco tipos de variante, um por dimensão da forma (`paraphrase`, `reorder`, `cue_swap`, `pergunta` e `sem_imagem`); a inversão continua fora; a análise primária é a média sobre os tipos, e a análise por tipo e por dimensão é exploratória.
 - **Antes do primeiro sorteio (21/10, v1.4):** o provedor passa a ser a API do Gemini (pago, pré-pago), com gerador `gemini-3.8-flash` e juiz `gemini-3.5-flash-lite`; prompts `gen-v4` e `judge-v4` depois do piloto de 40 notas do irmão (variantes descartadas); `cue_swap` por sinônimos fiéis e `same_topic` no juiz do Cloze.
 - **Antes do primeiro sorteio (21/10, v1.5):** o universo do banco é todo baralho sem inglês (5.121 notas, 2.727 elegíveis); o registro do irmão não é anonimizado e os dados ficam só com o autor e o irmão; o E3 ganha definição operacional (tamanho do enunciado e PMI do texto exportado, ligados ao registro por `note_id`).
-- **Pendências fora do protocolo:** créditos da API do Gemini para gerar o banco completo (cerca de US$ 7,3 para as 2.727 elegíveis com os prompts v4) e auditoria humana de ≥ 100 variantes (cerca de 30 pelo irmão).
+- **Antes do primeiro sorteio (21/10, v1.6):** a janela começa em 28/10 (e não em 2/11) e vai até 22/11; a auditoria humana é só do autor, sem as ≈ 30 do irmão (limitação declarada na seção 9).
+- **Pendências fora do protocolo:** auditoria humana de ≥ 100 variantes, só pelo autor (o banco completo foi gerado em 21/10, por cerca de US$ 7,6).

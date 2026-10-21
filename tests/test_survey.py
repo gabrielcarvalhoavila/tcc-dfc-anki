@@ -141,7 +141,7 @@ class SurveyTest(unittest.TestCase):
         self.assertRegex(text, r"multi_cloze\s+7\s+26%\s+6\s+2")
         self.assertRegex(text, r"Redes\s+27\s+11\n")
         self.assertRegex(text, r"Redes\s+basic\s+1\s+7\s+3\s+4")
-        self.assertIn("~7 eventos (~2 suspeitos)", text)  # 21/28 de 9 e de 3
+        self.assertIn("~8 eventos (~3 suspeitos)", text)  # 26/28 de 9 e de 3
 
     def test_cli_prints_only_aggregates_and_can_save_the_notes(self):
         out = os.path.join(tempfile.mkdtemp(), "notas.jsonl")
