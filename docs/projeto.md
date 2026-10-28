@@ -50,7 +50,7 @@ Os limiares numéricos estão no [protocolo](protocolo.md), seção 8, e foram f
 - Texto conceitual (Básico e Cloze com até 3 lacunas; no Cloze, as imagens ilustrativas ficam fixas), em português; só desktop.
 - Só variantes de mundo fechado; sem alegar melhora de aprendizagem de longo prazo.
 - "Aprendeu o conteúdo" é substituído por "recordação robusta a mudanças de forma".
-- Poucas pessoas (o irmão do autor é o participante principal): o resultado não se generaliza para a população de usuários.
+- Poucas pessoas (o irmão do autor é o participante principal, que estuda em sessões dedicadas numa cópia da coleção dele): o resultado não se generaliza para a população de usuários nem para a rotina natural de estudo.
 
 ## Contribuições esperadas
 
