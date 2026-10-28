@@ -92,7 +92,7 @@ def secao_ritmo(por_dia: pd.DataFrame, info: dict[str, Any], prec: list[dict[str
     if "ritmo_7d" in info:
         out.append(f"Ritmo dos últimos 7 dias do calendário: {num(info['ritmo_7d'], 1)} eventos por dia; projeção para 22/11: ≈ {info['projecao_fim']}.")
         if info.get("dias_ate_alvo") is not None:
-            out.append(f"No ritmo atual, o alvo de {P.ALVO_EVENTOS} chega em ≈ {info['dias_ate_alvo']} dia(s) ({info.get('data_alvo', '-')}); ritmo de uma amostra curta varia muito (o Enem é em 8 e 15/11).")
+            out.append(f"No ritmo atual, o alvo de {P.ALVO_EVENTOS} chega em ≈ {info['dias_ate_alvo']} dia(s) ({info.get('data_alvo', '-')}); o ritmo de poucos dias varia muito.")
     out.append("")
     if len(por_dia):
         t = por_dia.copy()
