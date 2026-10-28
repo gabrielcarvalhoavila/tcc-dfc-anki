@@ -530,6 +530,32 @@ class TestLinhaDeComando(unittest.TestCase):
         self.assertFalse(Path(self.saida, "olhadas.log").exists())
         self.assertTrue((pasta / "tabelas" / "sensibilidades.csv").exists())
 
+    def test_final_roda_uma_vez_e_a_segunda_exige_motivo(self):
+        caminho, _, _ = csv_sintetico(self.tmp.name, 400, semente=7)
+        base = ["final", "--csv", caminho, "--perfil", S.PERFIL_TESTE, "--saida", self.saida, "--bootstrap", "0"]
+        with mock.patch.object(cli, "hoje", return_value=datetime.date(2026, 11, 23)):
+            self.assertEqual(rodar_cli(base)[0], 0)
+            pastas = [p for p in Path(self.saida).iterdir() if p.is_dir()]
+            self.assertEqual(rodar_cli(base)[0], 2)  # segunda rodada sem motivo
+            self.assertEqual([p for p in Path(self.saida).iterdir() if p.is_dir()], pastas)
+            self.assertEqual(rodar_cli(base + ["--refazer", "   "])[0], 2)  # motivo vazio não vale
+            self.assertEqual(rodar_cli(base + ["--refazer", "corrigi um erro de leitura"])[0], 0)
+        linhas = Path(self.saida, "finais.log").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(linhas), 2)
+        self.assertIn("primeira rodada", linhas[0])
+        self.assertIn("corrigi um erro de leitura", linhas[1])
+        self.assertIn("validos=400", linhas[0])
+
+    def test_olhada_nao_conta_como_rodada_final(self):
+        caminho, _, _ = csv_sintetico(self.tmp.name, 400, semente=8)
+        base = ["final", "--csv", caminho, "--perfil", S.PERFIL_TESTE, "--saida", self.saida, "--bootstrap", "0"]
+        with mock.patch.object(cli, "hoje", return_value=datetime.date(2026, 11, 10)):
+            self.assertEqual(rodar_cli(base + ["--olhada-intermediaria", "teste"])[0], 0)
+        self.assertFalse(Path(self.saida, "finais.log").exists())
+        with mock.patch.object(cli, "hoje", return_value=datetime.date(2026, 11, 23)):
+            self.assertEqual(rodar_cli(base)[0], 0)
+        self.assertEqual(len(Path(self.saida, "finais.log").read_text(encoding="utf-8").splitlines()), 1)
+
     def test_final_no_alvo_de_eventos_nao_precisa_de_motivo(self):
         caminho, _, _ = csv_sintetico(self.tmp.name, 1000, semente=5)
         with mock.patch.object(cli, "hoje", return_value=datetime.date(2026, 11, 10)):

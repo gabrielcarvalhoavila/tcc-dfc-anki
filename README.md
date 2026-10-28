@@ -25,7 +25,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes; a variante sob demanda, que gera variantes de um cartão na hora com o LLM, fica desligada) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
 | `analysis/dfc_analysis/` | Análise do M5: monitor do CSV (só contagem e qualidade), teste cego, dados sintéticos e análise final com trava (precisa de numpy, pandas, scipy e statsmodels) |
-| `tests/` | 221 testes, sem rede; 17 usam o motor real do Anki e 49 (os da análise) precisam de numpy, pandas, scipy e statsmodels: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
+| `tests/` | 223 testes, sem rede; 17 usam o motor real do Anki e 51 (os da análise) precisam de numpy, pandas, scipy e statsmodels: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |

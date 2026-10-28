@@ -270,6 +270,18 @@ def rodar_final(args: argparse.Namespace) -> int:
         os.makedirs(args.saida, exist_ok=True)
         with open(os.path.join(args.saida, "olhadas.log"), "a", encoding="utf-8") as f:
             f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}\tcsv={os.path.basename(args.csv)} sha256={sha256_arquivo(args.csv)[:16]}\tvalidos={n_validos}\tmotivo={olhada}\n")
+    else:  # fim da coleta: a rodada pré-registrada é uma só (protocolo 7); outra exige motivo e também fica registrada
+        log = os.path.join(args.saida, "finais.log")
+        anteriores = 0
+        if os.path.exists(log):
+            with open(log, encoding="utf-8") as f:
+                anteriores = sum(1 for _ in f)
+        if anteriores and not (args.refazer and args.refazer.strip()):
+            print(f"Já há {anteriores} rodada(s) final(is) em {log}. O protocolo manda rodar uma vez (seção 7); para repetir, use --refazer \"motivo\" (fica registrado).", file=sys.stderr)
+            return 2
+        os.makedirs(args.saida, exist_ok=True)
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}\tcsv={os.path.basename(args.csv)} sha256={sha256_arquivo(args.csv)[:16]}\tvalidos={n_validos}\tcodigo={info_codigo()['sha256']}\tmotivo={(args.refazer or 'primeira rodada').strip()}\n")
     return rodar_analise(args, "final", df, perfil, caminho_csv=args.csv, olhada=olhada)
 
 
@@ -319,6 +331,7 @@ def _parser() -> argparse.ArgumentParser:
     f.add_argument("--semente", type=int, default=20261122)
     f.add_argument("--bootstrap", type=int, default=2000)
     f.add_argument("--olhada-intermediaria", metavar="MOTIVO", help="olhar o desfecho antes do fim da coleta (fica registrado em olhadas.log e no relatório)")
+    f.add_argument("--refazer", metavar="MOTIVO", help="repetir a rodada final (o protocolo manda rodar uma vez; o motivo fica em finais.log)")
     s = sub.add_parser("sintetico", help="gera dados com efeito conhecido e confere o roteiro")
     comum(s, csv=False)
     s.add_argument("--n", type=int, default=1000)
