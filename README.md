@@ -25,7 +25,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes; a variante sob demanda, que gera variantes de um cartão na hora com o LLM, fica desligada) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
 | `analysis/dfc_analysis/` | Análise do M5: monitor do CSV (só contagem e qualidade), teste cego, dados sintéticos e análise final com trava (precisa de numpy, pandas, scipy e statsmodels) |
-| `tests/` | 223 testes, sem rede; 17 usam o motor real do Anki e 51 (os da análise) precisam de numpy, pandas, scipy e statsmodels: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
+| `tests/` | 224 testes, sem rede; 17 usam o motor real do Anki e 52 (os da análise) precisam de numpy, pandas, scipy e statsmodels: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |
@@ -52,6 +52,7 @@ $env:PYTHONPATH = "analysis"
 $env:DFC_PERFIL_ESTUDO = "<nome do perfil de estudo>"
 .venv\Scripts\python -m dfc_analysis monitor --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --banco data\bank\variant_bank.json   # semanal: só contagem e qualidade
 .venv\Scripts\python -m dfc_analysis final --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --notas data\1_notas_exportadas_irmao_2026-10-21.jsonl   # uma vez, depois do fim da coleta
+.venv\Scripts\python -m dfc_analysis limpar --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv   # cópia só com o perfil de estudo na janela, para ver ou compartilhar
 ```
 
 ## Universo de cartões do autor (consulta de 20/10, regras da v1.1)

@@ -610,6 +610,23 @@ class TestLinhaDeComando(unittest.TestCase):
                 achados += segredo in nome
         self.assertEqual(achados, 0)
 
+    def test_limpar_deixa_so_o_perfil_de_estudo_na_janela_sem_mexer_nos_textos(self):
+        df, _ = S.simular(60, semente=9)
+        df.loc[:9, "profile"] = "perfil-do-autor"
+        df.loc[10:14, "answered_at"] = epoch(2026, 10, 27, 20)
+        df.loc[20, "draw_seed"] = "1e12345678901234"
+        caminho = os.path.join(self.tmp.name, "completo.csv")
+        S.gravar_csv(df, caminho)
+        self.assertEqual(rodar_cli(["limpar", "--csv", caminho, "--perfil", S.PERFIL_TESTE])[0], 0)
+        limpo = pd.read_csv(os.path.join(self.tmp.name, "completo_estudo.csv"), dtype=str, keep_default_na=False)
+        self.assertEqual(len(limpo), 45)
+        self.assertEqual(set(limpo["profile"]), {S.PERFIL_TESTE})
+        self.assertEqual(list(limpo.columns), list(pd.read_csv(caminho, dtype=str, nrows=0).columns))
+        self.assertEqual(limpo.loc[limpo["event_id"] == df.loc[20, "event_id"], "draw_seed"].iloc[0], "1e12345678901234")
+        self.assertEqual(len(pd.read_csv(caminho)), 60)  # o original fica como estava
+        with self.assertRaises(SystemExit):
+            rodar_cli(["limpar", "--csv", caminho, "--perfil", S.PERFIL_TESTE, "--para", caminho])
+
     def test_codigo_tem_hash_estavel(self):
         a, b = cli.info_codigo(), cli.info_codigo()
         self.assertEqual(a["sha256"], b["sha256"])

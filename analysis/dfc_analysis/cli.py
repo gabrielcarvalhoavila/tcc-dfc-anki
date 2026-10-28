@@ -304,6 +304,20 @@ def rodar_sintetico(args: argparse.Namespace) -> int:
     return rodar_analise(args, "sintetico", D.ler_csv(caminho), S.PERFIL_TESTE, caminho_csv=caminho, verdade=verdade)
 
 
+def rodar_limpar(args: argparse.Namespace) -> int:
+    perfil = _perfil(args)
+    destino = args.para or os.path.splitext(args.csv)[0] + "_estudo.csv"
+    if os.path.abspath(destino) == os.path.abspath(args.csv):
+        raise SystemExit("O arquivo de saída não pode ser o CSV original.")
+    bruto = pd.read_csv(args.csv, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    d = D.preparar(D.ler_csv(args.csv), perfil, args.fuso)
+    limpo = bruto.loc[(d["f_perfil"] & d["f_janela"]).to_numpy()]
+    limpo.to_csv(destino, index=False, encoding="utf-8")
+    print(f"{len(bruto)} linhas -> {len(limpo)} (perfil de estudo, {P.JANELA_INICIO:%d/%m} a {P.JANELA_FIM:%d/%m}). Gravado em {destino}")
+    print("Só para ver ou compartilhar: a análise usa sempre o CSV completo (os controles de integridade dependem do histórico inteiro).")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dfc_analysis", description="Análise do estudo DFC (protocolo v1.7, seções 7 e 8).")
     sub = p.add_subparsers(dest="modo", required=True)
@@ -339,6 +353,11 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--efeito-ctrl", type=float, default=3.0, help="efeito da variante nos controles, em pp")
     s.add_argument("--semente", type=int, default=1)
     s.add_argument("--bootstrap", type=int, default=200)
+    li = sub.add_parser("limpar", help="copia do CSV só com o perfil de estudo dentro da janela (o original não muda)")
+    li.add_argument("--csv", required=True)
+    li.add_argument("--perfil", help=f"nome do perfil de estudo (ou variável {P.PERFIL_ENV})")
+    li.add_argument("--fuso", default=P.FUSO)
+    li.add_argument("--para", help="arquivo de saída (padrão: <csv>_estudo.csv)")
     return p
 
 
@@ -346,4 +365,4 @@ def main(argv: Optional[list[str]] = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     args = _parser().parse_args(argv)
-    return {"monitor": rodar_monitor, "cego": rodar_cego, "final": rodar_final, "sintetico": rodar_sintetico}[args.modo](args)
+    return {"monitor": rodar_monitor, "cego": rodar_cego, "final": rodar_final, "sintetico": rodar_sintetico, "limpar": rodar_limpar}[args.modo](args)
