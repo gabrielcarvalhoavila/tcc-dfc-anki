@@ -13,7 +13,7 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | M1 | Banco de variantes e auditoria de 100 | 27/10 | Feito em 21/10: 2.727 notas elegíveis, 2.316 com variantes e 9.071 variantes, 90,7% aprovadas na validação automática (custo ≈ US$ 7,6); auditoria humana do autor: 94 de 100 válidas (94,0%), H1 atendida; banco oficial empacotado: 2.295 notas e 10.162 variantes, hash `e1284dee5eac` |
 | M3 | Add-on v1 (sorteio e exibição) | 27/10 | Feito: 0.4.0 instalada no Anki do autor, onde o irmão estuda (v1.7). A 0.3.0 (fichas Cloze com imagem, tecla `x`, Ctrl+Z, exportação do CSV) foi vista na interface em 21/10 com um banco falso; a 0.4.0, que só acrescenta a variante sob demanda (fora do estudo; habilitada no Anki compartilhado, protocolo 6.8), foi exercitada com o banco real em 22 e 27/10: 19 exposições sorteadas, todas com `shown_ok = 1` (`paraphrase`, `reorder`, `cue_swap` e `sem_imagem` vistos na tela; a `pergunta`, só com o banco falso e no `render_check`), tecla `x`, Ctrl+Z, exportação do CSV e 45 sorteios refeitos pela semente, 0 divergências |
 | M4 | Coleta | 28/10 a 22/11 | Começa em 28/10: o irmão estuda no PC do autor, num perfil de estudo com o baralho `00 - DFC` (protocolo 6.8) |
-| M5 | Análise | 23/11 a 27/11 | Não iniciado |
+| M5 | Análise | 23/11 a 27/11 | Script escrito e testado em 28/10 (`analysis/dfc_analysis/`: dados sintéticos com efeito conhecido, rótulos embaralhados e monitor sobre o CSV do primeiro dia; arquitetura, seção "Análise (M5)"); a análise final roda uma vez, depois do fim da coleta |
 | M6 | Entrega do trabalho | 4/12 | |
 | M7 | Apresentação | até 18/12 | |
 
@@ -24,7 +24,8 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | `docs/` | [projeto](docs/projeto.md), [fundamentação](docs/fundamentacao.md), [protocolo](docs/protocolo.md) (congelado), [piloto](docs/piloto-relampago.md), [arquitetura](docs/arquitetura.md), [desvios](docs/desvios.md) |
 | `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes; a variante sob demanda, que gera variantes de um cartão na hora com o LLM, fica desligada) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
-| `tests/` | 172 testes, sem rede; 17 usam o motor real do Anki (`run_tests.ps1 -Real`) e os demais, um Anki simulado |
+| `analysis/dfc_analysis/` | Análise do M5: monitor do CSV (só contagem e qualidade), teste cego, dados sintéticos e análise final com trava (precisa de numpy, pandas, scipy e statsmodels) |
+| `tests/` | 221 testes, sem rede; 17 usam o motor real do Anki e 49 (os da análise) precisam de numpy, pandas, scipy e statsmodels: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |
@@ -43,6 +44,15 @@ python -m dfc_pipeline stats --generation data/generation.jsonl
 ```
 
 Detalhes e esquemas em [arquitetura](docs/arquitetura.md).
+
+4. **Análise** (após `python -m venv .venv; .venv\Scripts\python -m pip install -r analysis\requirements.txt`):
+
+```powershell
+$env:PYTHONPATH = "analysis"
+$env:DFC_PERFIL_ESTUDO = "<nome do perfil de estudo>"
+.venv\Scripts\python -m dfc_analysis monitor --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --banco data\bank\variant_bank.json   # semanal: só contagem e qualidade
+.venv\Scripts\python -m dfc_analysis final --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --notas data\1_notas_exportadas_irmao_2026-10-21.jsonl   # uma vez, depois do fim da coleta
+```
 
 ## Universo de cartões do autor (consulta de 20/10, regras da v1.1)
 

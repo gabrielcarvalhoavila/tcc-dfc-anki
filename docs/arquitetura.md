@@ -26,7 +26,8 @@ O add-on cobre `A -> H -> I -> J`: registra as revisões e, na janela do estudo,
 |---|---|---|
 | `addon/dfc_probe/` | Add-on do Anki (Python, só desktop) | v0.4.0 (registro, sorteio e exibição; fichas Cloze com várias lacunas e imagens, protocolo v1.2; variante sob demanda, fora do estudo e desligada por padrão). Registro conferido no Anki 26.05 real contra o revlog (12 revisões, 0 divergências); sorteio e exibição testados com o motor real do Anki 26.5 (pacote `anki`, sem interface) e, em 20/10, no Anki real com a 0.2.x (variante nos dois lados, nota intacta, tecla `x`, mesma variante após Ctrl+Z); o teste de fumaça achou três defeitos (tecla `b`, novo sorteio e marca de variante ruim perdida após Ctrl+Z), corrigidos nas versões 0.2.1 e 0.2.2. A 0.3.0 (`pergunta`, `sem_imagem`, imagens) foi vista na interface em 21/10, com um banco falso e a coleção do irmão (variantes de texto, `sem_imagem`, imagens, tecla `x`, Ctrl+Z e exportação do CSV); a 0.4.0 só acrescenta a variante sob demanda e essa parte ainda não foi vista na interface |
 | `pipeline/dfc_pipeline/` | Exportar, gerar, validar, auditar e empacotar variantes | Testado com LLM falso e servidor HTTP local (Básico e Cloze: fichas com 1 a 3 lacunas e imagem); falta chave e modelo reais |
-| `tests/` | 166 testes (`scripts/run_tests.ps1`; 16 deles só rodam com o pacote `anki`: `-Real`) | Passando |
+| `tests/` | 221 testes (`scripts/run_tests.ps1`; 17 só rodam com o pacote `anki` e 49, os da análise, só com numpy, pandas, scipy e statsmodels: `-Real`) | Passando |
+| `analysis/dfc_analysis/` | Análise do M5: monitor, teste cego, dados sintéticos e análise final (seção "Análise (M5)") | Escrita e testada em 28/10; a final roda uma vez, depois do fim da coleta |
 | `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção (`render_check.py`) | |
 | `data/` (ignorado pelo Git) | `cards.jsonl`, `generation.jsonl`, `validation.jsonl`, auditoria e banco | Contém texto de cartões: não versionar |
 
@@ -109,6 +110,48 @@ Rodar na raiz do repositório com `$env:PYTHONPATH = "pipeline"`; variáveis em 
 ```
 
 `fields_hash` (SHA-1 dos campos brutos) permite ao add-on ignorar variantes de uma nota editada depois da geração. Em notas Cloze, `ords` é o número da lacuna menos 1 (um só `cN` por nota), `answers_html` traz a resposta de cada lacuna, na ordem dos marcadores do texto da variante (`[...]` se há uma lacuna; `[...1]`, `[...2]`, `[...3]` se há várias), e `images_html`, as imagens do campo, que as variantes de texto mantêm no topo. A `sem_imagem` não tem `text`. O add-on lê os esquemas 1 a 3 (os anteriores ao 3 têm uma lacuna, em `answer_html`, e nenhuma imagem).
+
+## Análise (M5)
+
+Pacote `analysis/dfc_analysis/` (numpy, pandas, scipy, statsmodels e, opcional, matplotlib: [`requirements.txt`](../analysis/requirements.txt)); o add-on e o pipeline seguem só com a biblioteca padrão. Os testes e a análise rodam no mesmo `.venv`: `python -m venv .venv; .venv\Scripts\python -m pip install anki==26.5 -r analysis\requirements.txt`. Na raiz do repositório:
+
+```powershell
+$env:PYTHONPATH = "analysis"
+$env:DFC_PERFIL_ESTUDO = "<nome do perfil de estudo>"   # ou --perfil; o nome não vai para nenhum arquivo de saída
+python -m dfc_analysis monitor --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --banco data\bank\variant_bank.json
+```
+
+| Modo | O que faz | Quando |
+|---|---|---|
+| `monitor` | Fluxo dos eventos até o "evento válido", integridade do CSV (ids únicos, `seq`, `shown_ok`, sorteio refeito pela semente e, com `--banco`, variante refeita pelo banco e pelo histórico do cartão), equilíbrio das covariáveis entre os braços, eventos por dia, projeção do alvo de 1000 e precisão prevista (só com os tamanhos das células e a taxa de falha global). **Não calcula nenhum desfecho por braço** (nem a figura das células) | Toda semana, junto com a conferência do CSV (protocolo 6.8) |
+| `cego` | Embaralha ao acaso `arm`, `variant_id` e `variant_type` entre os eventos sorteados do perfil de estudo na janela e roda a análise inteira: prova que o roteiro roda com os dados reais sem revelar o efeito (o relatório sai marcado) | Quando quiser testar o roteiro com o CSV mais recente |
+| `sintetico` | Gera eventos no formato do CSV com efeito conhecido (padrão: +15 pp nos suspeitos, +3 pp nos controles) e confere se a estimativa recupera o valor verdadeiro | Teste do roteiro |
+| `final` | A análise pré-registrada, com a trava abaixo | Uma vez, depois do fim da coleta |
+
+**Trava (protocolo 8, linha 5).** `final` só roda se hoje é depois de 22/11 ou se há ≥ 1000 eventos válidos; senão recusa (código de saída 2). Para olhar antes, `--olhada-intermediaria "motivo"`: a olhada vai para `data/analise/olhadas.log` (hora, CSV, eventos válidos, motivo) e o relatório sai marcado "OLHADA INTERMEDIÁRIA". Anotar também em [`desvios.md`](desvios.md).
+
+**Saída.** `data/analise/<data-hora>_<modo>/` (fora do Git): `relatorio.md`, `resultados.json`, `tabelas/*.csv` e `figuras/*.png`. O relatório traz no topo a versão do script, o hash do código, o commit (e se o código da análise está modificado desde ele), as versões dos pacotes e o hash do CSV.
+
+**O que `final` calcula.**
+
+- **H2 (primária):** `falha ~ variante × suspeito + log(intervalo) + log(dias desde a última revisão) + tipo + n_blanks + has_image`, logit com erro-padrão robusto por nota; DiD em pontos percentuais (efeito marginal médio por estrato), IC 95%, classe da tabela 8.1, menor efeito detectável e falha observada em cada célula. Abaixo de 300 eventos ou 100 por estrato, o relatório fica descritivo e não classifica (protocolo 8, linha 4, e 12).
+- **Efeito de escala:** a mesma interação em pp (logit), razão de chances (logit), razão de riscos (Poisson robusto) e diferença de probabilidades (modelo linear), com e sem a falha anterior do cartão (`last_ease`, `prev_eases`); diz se a leitura muda de uma escala para outra.
+- **Sensibilidades:** incluir "variante ruim"; suspeito com `reps` ≥ 4; suspeito com `n_reviews` ≥ 5; só modo regular; sem as respostas refeitas depois de Ctrl+Z (`after_undo`); e as três acrescentadas em 28/10 (desvios.md, entradas 4 e 5): incluir as respostas desfeitas sem substituta, só `reps` ≥ 5 e sem o evento da nota editada.
+- **Exploratórias:** por tipo e por dimensão, por número de lacunas e por imagem, dose-resposta (variante × `reps`).
+- **Custo (H5):** falha extra nas variantes dos controles, % de "variante ruim", falhas e tempo extras por exposição. **H1:** resumo de `audit_report.json`. **E3** (com `--notas`): AUC por validação cruzada em blocos de notas do escore com todos os sinais contra o baseline `reps` (protocolo 6.3.1), com `e3.py`.
+
+**Decisões de implementação** que o protocolo não fixa, tomadas em 28/10 sem olhar o desfecho (constantes em `prereg.py`; mudar depois é desvio):
+
+1. O efeito marginal de cada estrato é a média, sobre os eventos do estrato (dos dois braços), de p(variante) − p(original), com a variante nos tipos na proporção em que foram sorteados (a mesma nos dois estratos: "média sobre os tipos sorteados", protocolo 7). O tipo entra no modelo em codificação de desvio (soma zero) e vale 0 no original; o resultado não depende da codificação (testado).
+2. IC pelo método delta com a covariância robusta por nota (só por nota: o estudo tem um participante principal, então o agrupamento por usuário do protocolo 7 não se aplica; a derivada é numérica e o resultado foi conferido contra um cálculo independente com a fórmula do `statsmodels`). Conferido por bootstrap de notas (2.000 réplicas no `final`); se as duas classes 8.1 diferirem, o relatório diz.
+3. `log(max(ivl, 1))`, `log(max(dias, 0,5))`, `n_blanks` e `has_image` numéricos, todos centrados. Covariável constante ou colinear no recorte sai do modelo (com aviso). `last_ease` vazio conta como controle.
+4. Ajuste instável (sem convergência, coeficiente com módulo acima de 10 — separação quase completa, comum com poucas falhas — ou variância negativa) fica sem IC e com classe "indeterminada": nunca decide H2.
+5. Estimativa negativa com IC que exclui 0 cai em "efeito pequeno" pela tabela 8.1, e o relatório a rotula "na direção oposta à hipótese".
+6. Dose-resposta por terços dos eventos (`reps` é muito assimétrico: no 1º dia, mediana 15 e máximo 38). Por tipo, os mesmos eventos originais comparam com cada tipo. Por lacunas e por imagem, o modelo do recorte não leva o tipo nem a própria covariável. Recorte com célula (estrato × braço) de menos de 10 eventos não é estimado.
+7. E3: logit com penalidade L2 (λ = 1) sobre os sinais padronizados no treino, 5 blocos de notas × 20 repetições (média das previsões), IC 95% por bootstrap de notas (1.000 réplicas). Tempo por caractere: `t_reveal_ms` truncado no percentil 99 e padronizado pelas exposições do original e sem sorteio da janela; tamanho e PMI do texto exportado (todas as notas do arquivo).
+8. A data local da janela usa `America/Sao_Paulo` (o Brasil não tem horário de verão desde 2019).
+
+**Como foi testada.** `tests/test_analysis.py` (49 testes): trava; cada filtro do fluxo exclui só a sua linha e as bordas da janela; limites do suspeito; sorteio refeito igual ao do add-on (`variants.decide`) e adulteração detectada; efeito marginal e erro-padrão iguais aos de um cálculo independente com a fórmula do `statsmodels` e `patsy`; invariância à codificação e à escala; método delta contra bootstrap; viés e cobertura do IC; efeito nulo quase nunca dá "apoiada"; tabela 8.1; instabilidade; E3; e a linha de comando de ponta a ponta (o monitor não tem nenhuma saída de desfecho por braço e o nome do perfil não aparece em nenhum arquivo). Em simulações de 300 réplicas com 1.000 eventos (falha ≈ 4% nos suspeitos e ≈ 14% nos controles, 15% de notas repetidas e efeito aleatório de nota): sem efeito, média da DiD −0,1 pp, cobertura do IC 95% de 95,0% e "apoiada" em 0,3% das réplicas; com +10 pp nos suspeitos, média 9,95 pp, cobertura 96,0% e "apoiada" em 50%; com DiD de 12 pp (+15 e +3), média 12,1 pp, cobertura 95,3% e "apoiada" em 68%. Ou seja, com ~1.000 eventos o critério "estimativa ≥ 10 pp com IC fora de 0" só é atingido na maioria das réplicas se o efeito verdadeiro passar de ~12 pp. Com o CSV real de 28/10: `monitor` (63 eventos válidos, 98 de 98 braços e 41 de 41 variantes refeitos) e `cego` (roda inteiro; com 6 falhas o ajuste sai marcado instável, como deve).
 
 ## Limites conhecidos
 
