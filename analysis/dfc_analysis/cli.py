@@ -209,7 +209,7 @@ def rodar_analise(args: argparse.Namespace, modo: str, df: pd.DataFrame, perfil:
         figs["celulas"] = tentar("Figura das células", lambda: F.celulas(taxas, pasta))
         figs["forest"] = tentar("Figura da DiD", lambda: F.forest(sens, tipo, sub, pasta))
     else:
-        avisos.append("matplotlib não instalado: figuras não geradas (pip install matplotlib).")
+        avisos.append("matplotlib não instalado: figuras não geradas (python -m pip install matplotlib).")
 
     texto += R.secao_celulas(D.tabela_celulas(a), a.loc[a["variante"] == 1, "tipo"].value_counts(), a["deck_name"].value_counts())
     texto += R.secao_primaria(primario, classe or "", minimos, taxas, coef)

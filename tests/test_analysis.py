@@ -25,7 +25,7 @@ if HAS_STATS:
 
     from dfc_analysis import cli, data as D, e3 as E, figuras as F, models as M, prereg as P, report as R, synthetic as S
 
-SKIP = unittest.skipUnless(HAS_STATS, "faltam numpy, pandas, scipy ou statsmodels (pip install -r analysis/requirements.txt)")
+SKIP = unittest.skipUnless(HAS_STATS, "faltam numpy, pandas, scipy ou statsmodels (python -m pip install -r analysis/requirements.txt)")
 BRT = datetime.timezone(datetime.timedelta(hours=-3))
 
 
