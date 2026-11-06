@@ -12,3 +12,7 @@
 - `live_gen_extra_body`, `live_judge_extra_body`: parâmetros extras que o provedor aceita em cada chamada, como objeto JSON (padrão: `reasoning_effort` dos Gemini 3); `{}` não envia nada.
 
 O banco de eventos (`dfc_events.sqlite3`), o banco de variantes importado (`variant_bank.json`), o log de erros (`dfc_errors.log`) e o sal ficam em `user_files/`, que o Anki preserva ao atualizar o add-on. O banco de eventos não guarda o texto dos cartões; o de variantes guarda o texto das variantes e não deve ser compartilhado.
+
+### Variantes nos meus cartões (uso livre, v0.5.0)
+
+Fora do estudo, e sem nenhuma chave nesta configuração: os ajustes (ligar, chance de aparecer, tipos, baralhos, quais cartões, selo) ficam em Ferramentas > DFC Probe > Variantes nos meus cartões (uso livre) > Configurar e são guardados em cada coleção; por padrão está desligado. Gerar variantes (de um cartão ou de um baralho inteiro, também pela engrenagem do baralho) usa `live_enabled` e a chave acima. As variantes geradas vão para o banco pessoal (`user_files/free_bank_<id>.json`, um por coleção), que guarda o texto das variantes e não deve ser compartilhado. Nota que está no banco do estudo nunca recebe variante do uso livre, e o sorteio do estudo sempre tem a vez.

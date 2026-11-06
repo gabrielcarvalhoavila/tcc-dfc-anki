@@ -427,5 +427,171 @@ class RealHooksTest(unittest.TestCase):
         self.assertEqual([(r["note_kind"], r["n_blanks"], r["has_image"]) for r in rows], [("cloze", 2, 1), ("cloze", 2, 1)])
 
 
+@unittest.skipUnless(HAS_ANKI, "pacote anki não instalado (opcional)")
+class RealFreeModeTest(unittest.TestCase):
+    """O uso livre (v0.5) sobre uma coleção real: troca na revisão, gravação das configurações na coleção e geração em lote a partir de baralhos reais."""
+
+    setUp = RealHooksTest.setUp
+    tearDown = RealHooksTest.tearDown
+    variants_mod = RealHooksTest.variants_mod
+    basic_note = RealHooksTest.basic_note
+    age = RealHooksTest.age
+    add_revlog = RealHooksTest.add_revlog
+
+    FICHA = 'Governo Mussolini<br><div><img src="d.png"></div><br>Antecedentes: {{c1::Questão Romana}}<br>Consiste: {{c1::reconhecimento do Vaticano}}'
+
+    def load_free(self):
+        """Importa o add-on sem banco do estudo; o banco pessoal fica por conta de cada teste."""
+        import importlib
+
+        user_files = os.environ["DFC_PROBE_USER_FILES"]
+        os.makedirs(user_files, exist_ok=True)
+        self.mod = importlib.import_module("dfc_probe")
+        self.free = importlib.import_module("dfc_probe.free")
+        self.fm = self.mod._free
+        self.fm.save_settings(self.free.Settings(enabled=True, probability=100))
+
+    def chain(self, text, card, kind):
+        for fn in self.hooks.card_will_show:
+            text = fn(text, card, kind)
+        return text
+
+    def study(self, card, ease=3):
+        munge = self.col.media.escape_media_filenames
+        shown_q = self.chain(munge(card.question()), card, "reviewQuestion")
+        self.hooks.reviewer_did_show_question[0](card)
+        shown_a = self.chain(munge(card.answer()), card, "reviewAnswer")
+        self.hooks.reviewer_did_show_answer[0](card)
+        self.hooks.reviewer_did_answer_card[0](None, card, ease)
+        return shown_q, shown_a
+
+    def cloze_note(self, text=None):
+        note = self.col.new_note(self.col.models.by_name("Cloze"))
+        note["Text"], note["Back Extra"] = text or self.FICHA, "Pacto de 1929"
+        self.col.add_note(note, 1)
+        return note
+
+    def test_free_variant_on_a_real_basic_card_and_the_event_says_so(self):
+        note = self.basic_note()
+        card = self.age(note)
+        self.load_free()
+        entry = {
+            "kind": "basic", "ords": [0], "q_field": 0, "fields_hash": self.variants_mod().fields_hash(note.fields),
+            "variants": [{"id": f"{note.id}-paraphrase-1", "type": "paraphrase", "text": "Que propriedade distingue a transmissão do TCP da do UDP?"}],
+        }
+        self.assertTrue(self.fm.bank().set_entry(note.id, entry))
+        shown_q, shown_a = self.study(card)
+        self.assertTrue(shown_q.startswith("<style>") and shown_q.endswith("Que propriedade distingue a transmissão do TCP da do UDP?"))
+        self.assertIn("Entrega confiável e ordenada", shown_a)
+        self.assertNotIn("O que o TCP", shown_q + shown_a)
+        self.assertEqual(self.col.get_note(note.id)["Front"], "O que o TCP garante que o UDP não garante?")  # nada foi gravado
+        (row,) = self.mod._store.rows()
+        self.assertEqual((row["arm"], row["draw_note"], row["variant_id"], row["same_day"]), (None, "free_variant", None, 0))
+        self.assertEqual(self.fm.bank().recent(note.id), [f"{note.id}-paraphrase-1"])
+
+    def test_settings_live_in_the_collection(self):
+        self.load_free()
+        self.fm.save_settings(self.free.Settings(enabled=True, probability=25, types=["reorder"], deck_ids=[1]))
+        s = self.free.Settings.from_raw(self.col.get_config("dfc_free"))
+        self.assertEqual((s.probability, s.types, s.deck_ids), (25, ["reorder"], [1]))
+        path = self.fm.bank().path  # o identificador do banco pessoal nasce na primeira vez que o banco é aberto
+        self.assertEqual(self.col.get_config("dfc_free_id"), os.path.basename(path)[len("free_bank_"):-len(".json")])
+
+    def test_card_filters_with_the_real_state(self):
+        note = self.basic_note()
+        new_card = note.cards()[0]  # cartão novo, nunca estudado
+        self.load_free()
+        entry = {"kind": "basic", "ords": [0], "q_field": 0, "fields_hash": self.variants_mod().fields_hash(note.fields), "variants": [{"id": "1-a", "type": "paraphrase", "text": "Outra pergunta sobre o TCP e o UDP?"}]}
+        self.fm.bank().set_entry(note.id, entry)
+        shown_q, _ = self.study(new_card)
+        self.assertNotIn("Outra pergunta", shown_q)  # novo: sem variante
+        card = self.age(note, reviews=((30, 0), (15, 1)))
+        self.add_revlog(card.id, int(time.time() * 1000) - 120_000)  # respondido há dois minutos: mesmo dia
+        shown_q, _ = self.study(self.col.get_card(card.id))
+        self.assertNotIn("Outra pergunta", shown_q)
+        self.fm.save_settings(self.free.Settings(enabled=True, probability=100, avoid_same_day=False))
+        again = self.col.get_card(card.id)
+        again.reps += 1  # a resposta anterior foi dada: o cartão volta como uma exposição nova
+        self.col.update_card(again)
+        shown_q, _ = self.study(self.col.get_card(card.id))
+        self.assertIn("Outra pergunta", shown_q)
+
+    def test_deck_scope_uses_the_real_deck_tree(self):
+        parent = self.col.decks.id("Pai")
+        child = self.col.decks.id("Pai::Filho")
+        other = self.col.decks.id("Outro")
+        notes = {}
+        for name, did in (("filho", child), ("outro", other)):
+            note = self.col.new_note(self.col.models.by_name("Basic"))
+            note["Front"], note["Back"] = f"Pergunta do baralho {name} com texto suficiente?", "Resposta"
+            self.col.add_note(note, did)
+            notes[name] = note
+        cards = {k: self.age(n) for k, n in notes.items()}
+        self.load_free()
+        self.fm.save_settings(self.free.Settings(enabled=True, probability=100, deck_ids=[parent]))
+        for name, note in notes.items():
+            self.fm.bank().set_entry(note.id, {"kind": "basic", "ords": [0], "q_field": 0, "fields_hash": self.variants_mod().fields_hash(note.fields), "variants": [{"id": f"{name}-a", "type": "paraphrase", "text": f"Variante da pergunta {name}?"}]})
+        self.assertIn("Variante da pergunta filho?", self.study(cards["filho"])[0])  # o subbaralho entra com o pai
+        self.assertNotIn("Variante da pergunta outro?", self.study(cards["outro"])[0])
+
+    def test_batch_from_real_decks_feeds_the_review_with_matching_hashes(self):
+        from dfc_pipeline.llm import FakeLLM
+
+        parent = self.col.decks.id("Estudo")
+        child = self.col.decks.id("Estudo::Redes")
+        basic, ficha = self.basic_note(), self.cloze_note()
+        self.col.set_deck([c.id for n in (basic, ficha) for c in n.cards()], parent)
+        short = self.col.new_note(self.col.models.by_name("Cloze"))
+        short["Text"] = "A {{c1::água}} ferve."
+        self.col.add_note(short, child)
+        cards = {"basic": self.age(basic), "ficha": self.age(ficha), "short": self.age(short)}
+        self.load_free()
+        batch = importlib.import_module("dfc_probe.batch")
+        core = importlib.import_module("dfc_probe.core")
+        adapter = importlib.import_module("dfc_probe.anki_adapter")
+        records = adapter.collect_records(self.col, parent, core.note_to_record)
+        self.assertEqual({r["note_id"] for r in records}, {basic.id, ficha.id, short.id})  # o subbaralho vem junto
+        plan = batch.make_plan(records, self.fm.bank(), set(), batch.Options())
+        self.assertEqual(({r["note_id"] for r in plan.todo}, plan.ineligible), ({basic.id, ficha.id}, 1))
+        summary = batch.run(plan.todo, FakeLLM(), FakeLLM(), self.fm.bank(), batch.Options(workers=2))
+        self.assertEqual((summary.with_variants, summary.errors), (2, 0))
+        self.assertEqual(sorted(v["type"] for v in self.fm.bank().entry(ficha.id)["variants"]), ["cue_swap", "paraphrase", "pergunta", "reorder", "sem_imagem"])
+        # o hash que o pipeline calculou sobre `note.items()` é o mesmo que o gancho calcula sobre `note.fields`: as variantes aparecem
+        shown_basic, answer_basic = self.study(cards["basic"])
+        self.assertNotIn("O que o TCP", shown_basic + answer_basic)
+        self.assertIn("Entrega confiável e ordenada", answer_basic)
+        shown_ficha, answer_ficha = self.study(cards["ficha"])
+        self.assertNotEqual(shown_ficha, self.col.media.escape_media_filenames(cards["ficha"].question()))
+        self.assertIn("Pacto de 1929", answer_ficha)
+
+    def test_collect_records_filters_and_orders_by_due_date(self):
+        parent = self.col.decks.id("Pai")
+        child = self.col.decks.id("Pai::Filho")
+        made = {}
+        for name, did, text in (("tarde", parent, "tarde"), ("cedo", child, "cedo"), ("nova", parent, "nova"), ("suspensa", parent, "suspensa"), ("fora", self.col.decks.id("Outro"), "fora")):
+            note = self.col.new_note(self.col.models.by_name("Basic"))
+            note["Front"], note["Back"] = f"Pergunta {text} com texto suficiente para o teste?", "Resposta"
+            self.col.add_note(note, did)
+            made[name] = note
+        for name, due_offset in (("tarde", 5), ("cedo", -3), ("suspensa", -9), ("fora", -1)):
+            card = self.age(made[name])
+            card.due = self.col.sched.today + due_offset
+            self.col.update_card(card)
+        self.col.sched.suspend_cards([made["suspensa"].cards()[0].id])
+        self.load_free()
+        adapter = importlib.import_module("dfc_probe.anki_adapter")
+        core = importlib.import_module("dfc_probe.core")
+
+        def ids(**kw):
+            return [r["note_id"] for r in adapter.collect_records(self.col, parent, core.note_to_record, **kw)]
+
+        self.assertEqual(ids(), [made["cedo"].id, made["tarde"].id])  # sem novas nem suspensas; as que vencem primeiro na frente
+        self.assertEqual(ids(children=False), [made["tarde"].id])
+        self.assertEqual(ids(skip_suspended=False), [made["suspensa"].id, made["cedo"].id, made["tarde"].id])
+        self.assertEqual(ids(skip_new=False), [made["cedo"].id, made["tarde"].id, made["nova"].id])  # novas por último
+        self.assertEqual(adapter.collect_records(self.col, parent, core.note_to_record)[0]["decks"], ["Pai"])
+        self.assertEqual(adapter.collect_records(self.col, self.col.decks.id("Vazio"), core.note_to_record), [])
+
+
 if __name__ == "__main__":
     unittest.main()

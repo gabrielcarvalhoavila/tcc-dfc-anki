@@ -16,7 +16,7 @@ import uuid
 from contextlib import closing
 from typing import Any, Callable, Iterable, Optional
 
-ADDON_VERSION = "0.4.0"
+ADDON_VERSION = "0.5.0"
 SCHEMA_VERSION = 5
 
 # Esquema do protocolo (seção 6.3). arm e variant_* só são preenchidos nas exposições sorteadas; note_kind, n_blanks e has_image (covariáveis da nota, seção 7) em toda exposição sorteada.

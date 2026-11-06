@@ -123,6 +123,9 @@ class FakeCol:
             raise AttributeError("sem get_config")
         return CONFIG.get(key, default)
 
+    def set_config(self, key, value):
+        CONFIG[key] = value
+
     def find_notes(self, q):
         return [11, 12]
 
@@ -265,6 +268,8 @@ class SmokeTest(unittest.TestCase):
             card_will_show=[],
             state_shortcuts_will_change=[],
             reviewer_will_show_context_menu=[],
+            profile_will_close=[],
+            deck_browser_will_show_options_menu=[],
         )
         with open(os.path.join(self.tmp.name, "variant_bank.json"), "wb") as f:
             f.write(bank_bytes())
@@ -721,7 +726,7 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual((kwargs["type"], kwargs["run"]), ("html", False))
         self.assertTrue(dialog.shown)
         self.assertIn("Variantes", text)
-        self.assertEqual([b.text for b in box.buttons], ["Criar cartão: Paráfrase", "Criar cartão: Reordenação", "Criar cartão: Formato", "Criar cartão: Pistas iniciais"])
+        self.assertEqual([b.text for b in box.buttons], ["Criar cartão: Paráfrase", "Criar cartão: Reordenação", "Criar cartão: Formato", "Criar cartão: Pistas iniciais", "Guardar no banco pessoal..."])
         self.assertEqual(self.mod._store.count(), 0)
         self.assertEqual(self.added, [])
         with open(bank_path, "rb") as f:

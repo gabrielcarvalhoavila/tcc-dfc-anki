@@ -86,6 +86,16 @@ def _live_status(cfg: dict) -> str:
     return "ligada (chave " + ("preenchida" if str(cfg.get("live_api_key") or "").strip() else "ausente") + ")"
 
 
+def _free_status() -> str:
+    if _free is None:
+        return "indisponível (veja dfc_errors.log)"
+    try:
+        return _free.status_line()
+    except Exception:
+        _log_error()
+        return "erro ao ler (veja dfc_errors.log)"
+
+
 def _window_ok() -> bool:
     cfg = _config()
     return variants.in_window(datetime.date.today(), str(cfg.get("draw_start", "2026-10-28")), str(cfg.get("draw_end", "2026-11-22")))
@@ -208,10 +218,66 @@ def _on_card_will_show(text, card, kind):
         return text
 
 
+# Variantes no uso livre (v0.5): independente do sorteio do estudo, que sempre tem a vez (ver docs/protocolo.md, 6.8).
+_free = None
+
+
+def _study_drew(card) -> bool:
+    p = _tracker.pending if _tracker is not None else None
+    return bool(p and p["card_id"] == card.id and p["extra"].get("arm") is not None)
+
+
+def _mark_free_event(card) -> None:
+    """O evento do estudo registra que a tela foi alterada pelo uso livre (nunca entra como sorteio)."""
+    p = _tracker.pending if _tracker is not None else None
+    if p and p["card_id"] == card.id:
+        p["extra"]["draw_note"] = "free_variant"
+
+
+def _expand_decks(ids) -> set:
+    out = set()
+    for deck_id in ids:
+        out.update(mw.col.decks.deck_and_child_ids(deck_id))
+    return out
+
+
+try:
+    from . import freemode
+
+    _free = freemode.FreeMode(
+        freemode.Env(
+            col=lambda: mw.col, user_files=USER_FILES, snapshot=make_snapshot_fn(mw), render=render_pair, munge=_munge,
+            official_has=lambda nid: _bank is not None and _bank.entry(nid) is not None, study_drew=_study_drew, mark_event=_mark_free_event,
+            expand_decks=_expand_decks, tooltip=tooltip, log_error=_log_error,
+        )
+    )
+except Exception:
+    _log_error()
+
+
+def _on_card_will_show_free(text, card, kind):
+    return text if _free is None else _free.on_card_will_show(text, card, kind)
+
+
+@_safe
+def _on_profile_will_close() -> None:
+    if _free is not None:
+        _free.flush()
+
+
+@_safe
+def _on_deck_options(menu, deck_id) -> None:
+    if _free is not None:
+        action = menu.addAction("Gerar variantes do baralho (DFC Probe)...")
+        action.triggered.connect(lambda _checked=False, d=deck_id: _free_batch(d))
+
+
 @_safe
 def _mark_bad_current() -> None:
     p = _tracker.pending if _tracker is not None else None
     if not p or p["extra"].get("arm") != "variant":
+        if _free is not None and _free.mark_bad_current():
+            return
         tooltip("DFC Probe: esta exibição não mostra uma variante.")
         return
     p["extra"]["flag_bad"] = 1
@@ -222,6 +288,8 @@ def _mark_bad_current() -> None:
 def _mark_bad_last() -> None:
     row = _store.last_event() if _store is not None else None
     if not row or row.get("arm") != "variant":
+        if _free is not None and _free.mark_bad_last():
+            return
         tooltip("DFC Probe: a última resposta não foi de uma variante.")
         return
     _store.mark_bad(row["event_id"])
@@ -254,6 +322,17 @@ gui_hooks.reviewer_did_answer_card.append(_on_answered)
 gui_hooks.card_will_show.append(_on_card_will_show)
 gui_hooks.state_shortcuts_will_change.append(_on_shortcuts)
 gui_hooks.reviewer_will_show_context_menu.append(_on_context_menu)
+gui_hooks.card_will_show.append(_on_card_will_show_free)  # depois do estudo: ele sorteia primeiro
+
+
+def _register_free_hooks() -> None:
+    for name, fn in (("profile_will_close", _on_profile_will_close), ("deck_browser_will_show_options_menu", _on_deck_options)):
+        hook = getattr(gui_hooks, name, None)
+        if hook is not None:
+            hook.append(fn)
+
+
+_register_free_hooks()
 
 
 @_safe
@@ -306,6 +385,7 @@ def _status() -> None:
         f"Banco de variantes: {bank}\n"
         f"Sorteio: {'ligado' if _draw_enabled() else 'desligado'} (janela {cfg.get('draw_start')} a {cfg.get('draw_end')}; hoje {'dentro' if _window_ok() else 'fora'})\n"
         f"Variante sob demanda (LLM): {_live_status(cfg)}\n"
+        f"Variantes nos meus cartões (uso livre): {_free_status()}\n"
         f"Atalho de variante ruim: {key_text}\nErros: {ERR_LOG}"
     )
 
@@ -365,13 +445,49 @@ def _live_show(card, result: dict, live) -> None:
     from aqt.qt import QDialogButtonBox
     from aqt.utils import showText
 
-    dialog, box = showText(live.render_html(result), parent=mw, type="html", run=False, title="DFC Probe: variantes do cartão", minWidth=640, minHeight=520)
+    dialog, box = showText(live.render_html(result, can_save=_free is not None), parent=mw, type="html", run=False, title="DFC Probe: variantes do cartão", minWidth=640, minHeight=520)
     for v in result["variants"]:
         if v["valid"]:
             button = box.addButton("Criar cartão: " + live.BUTTON_LABELS.get(v["type"], v["type"]), QDialogButtonBox.ButtonRole.ActionRole)
             button.clicked.connect(lambda _checked=False, v=v: _live_add_card(card, result, v))
+    if _free is not None and any(v["valid"] for v in result["variants"]):
+        save = box.addButton("Guardar no banco pessoal...", QDialogButtonBox.ButtonRole.ActionRole)
+        save.clicked.connect(lambda _checked=False: _free_screen("open_save_picker", result))
     _live_windows.append(dialog)
     dialog.show()
+
+
+def _free_screen(name: str, *args) -> None:
+    """Abre uma tela do uso livre; um erro vira aviso e registro, nunca afeta a revisão."""
+    if _free is None:
+        showInfo(f"As variantes nos meus cartões não carregaram; detalhes em {ERR_LOG}.")
+        return
+    try:
+        from . import free_ui
+
+        getattr(free_ui, name)(mw, _free, *args)
+    except Exception:
+        _log_error()
+        showInfo(f"Não foi possível abrir esta tela; detalhes em {ERR_LOG}.")
+
+
+def _free_official_ids() -> set:
+    return set(_bank.notes) if _bank is not None else set()
+
+
+@_safe
+def _free_settings() -> None:
+    _free_screen("open_settings", lambda: _free_batch(), lambda: _free_screen("open_bank"))
+
+
+@_safe
+def _free_batch(deck_id=None) -> None:
+    _free_screen("open_batch", _config(), _free_official_ids, deck_id)
+
+
+@_safe
+def _free_bank() -> None:
+    _free_screen("open_bank")
 
 
 @_safe
@@ -450,6 +566,11 @@ def _setup_menu() -> None:
     _live_action.triggered.connect(lambda _checked=False: _live_variants())
     _live_action.setVisible(_live_on())
     menu.addAction(_live_action)
+    free_menu = menu.addMenu("Variantes nos meus cartões (uso livre)")
+    for label, fn in (("Configurar...", _free_settings), ("Gerar variantes de um baralho...", _free_batch), ("Banco pessoal...", _free_bank)):
+        action = QAction(label, mw)
+        action.triggered.connect(lambda _checked=False, f=fn: f())
+        free_menu.addAction(action)
     mw.addonManager.setConfigUpdatedAction(__name__, _on_config_updated)
 
 

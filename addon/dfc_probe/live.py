@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import html
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 try:  # instalado: o pipeline vem copiado para dfc_probe/dfc_pipeline (scripts/vendor_pipeline.ps1)
     from .dfc_pipeline.cards import parse_note
@@ -58,8 +58,8 @@ REASON_LABELS = {
 }
 
 
-def build_clients(cfg: Mapping[str, Any]) -> tuple[Any, Any]:
-    """Gerador e juiz da configuração do add-on (chave e modelos do próprio usuário), com menos tentativas e prazo menor que no lote: aqui uma pessoa espera."""
+def build_clients(cfg: Mapping[str, Any], batch: bool = False) -> tuple[Any, Any]:
+    """Gerador e juiz da configuração do add-on (chave e modelos do próprio usuário). Para um cartão só, menos tentativas e prazo menor (uma pessoa espera); em lote (`batch`), mais paciência."""
     base = str(cfg.get("live_base_url") or "").strip()
     key = str(cfg.get("live_api_key") or "").strip()
     if not base:
@@ -74,18 +74,32 @@ def build_clients(cfg: Mapping[str, Any]) -> tuple[Any, Any]:
             raise ConfigError(f"preencha live_{role}_model")
         if extra is not None and not isinstance(extra, dict):
             raise ConfigError(f"live_{role}_extra_body deve ser um objeto JSON")
-        clients.append(LLMClient(base, key or None, model, temperature=temperature, timeout=60, max_retries=1, json_mode=True, extra_body=extra))
+        timeout, retries = (90, 3) if batch else (60, 1)
+        clients.append(LLMClient(base, key or None, model, temperature=temperature, timeout=timeout, max_retries=retries, json_mode=True, extra_body=extra))
     return clients[0], clients[1]
 
 
-def generate_variants(record: dict[str, Any], gen_client: Any, judge_client: Any, card_ord: int = 0, workers: int = 4) -> dict[str, Any]:
-    """Variantes do cartão (registro no formato de `core.note_to_record`), cada uma com o veredito da validação do pipeline."""
+def add_usage(total: dict[str, int], usage: Any) -> None:
+    for k, v in (usage or {}).items():
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            total[k] = total.get(k, 0) + int(v)
+
+
+def generate_variants(record: dict[str, Any], gen_client: Any, judge_client: Any, card_ord: Optional[int] = 0, workers: int = 4, types: Optional[Iterable[str]] = None) -> dict[str, Any]:
+    """Variantes do cartão (registro no formato de `core.note_to_record`), cada uma com o veredito da validação do pipeline.
+
+    `card_ord` é o cartão que está na tela; None (geração em lote) aceita a nota pelo cartão principal dela.
+    `types` poupa chamadas do juiz: só os tipos pedidos são validados (com `sem_imagem` e imagem no cartão, todos, porque essa variante depende de um texto aprovado)."""
     card = parse_note(record)
     answers = list(zip(card.markers, card.answers_text)) if card.kind == "cloze" else [("", card.answer_text)]
     reasons = list(card.reasons)
-    if card_ord not in card.ords:
+    if card_ord is not None and card_ord not in card.ords:
         reasons.append("other_card_of_note")
+    usage: dict[str, int] = {}
     result: dict[str, Any] = {
+        "note_id": card.note_id,
+        "fields_hash": card.fields_hash,
+        "usage": usage,
         "text": card.question_text,
         "answers": answers,
         "images": len(card.images_html),
@@ -106,16 +120,27 @@ def generate_variants(record: dict[str, Any], gen_client: Any, judge_client: Any
         return result
     rec = generate_one(card, gen_client)
     result.update(conceptual=rec["conceptual"], reason=rec["reason"], error=rec["error"])
+    add_usage(usage, (rec.get("generator") or {}).get("usage"))
     if rec["error"] or not rec["variants"]:
         return result
+    to_judge = rec["variants"]
+    if types is not None:
+        wanted = set(types)
+        if not (card.images_html and "sem_imagem" in wanted):
+            to_judge = [v for v in to_judge if v["type"] in wanted]
+        if not to_judge:
+            return result
 
-    def check(variant: dict[str, str]) -> dict[str, Any]:
-        verdict, _usage = judge_variant(judge_client, card, variant["text"])
+    def check(variant: dict[str, str]) -> tuple[dict[str, Any], Any]:
+        verdict, judge_usage = judge_variant(judge_client, card, variant["text"])
         ok, why, _metrics = decide(card, variant, verdict)
-        return {"type": variant["type"], "text": variant["text"], "valid": ok, "reasons": why}
+        return {"id": variant["variant_id"], "type": variant["type"], "text": variant["text"], "valid": ok, "reasons": why}, judge_usage
 
-    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(rec["variants"])))) as pool:
-        result["variants"] = list(pool.map(check, rec["variants"]))
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(to_judge)))) as pool:
+        checked = list(pool.map(check, to_judge))
+    result["variants"] = [v for v, _u in checked]
+    for _v, judge_usage in checked:
+        add_usage(usage, judge_usage)
     return result
 
 
@@ -138,11 +163,13 @@ def explain_no_variants(result: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def render_html(result: dict[str, Any]) -> str:
+def render_html(result: dict[str, Any], can_save: bool = False) -> str:
     """Janela com o cartão, as variantes e o veredito de cada uma. Todo texto vindo do cartão ou do LLM é escapado."""
     parts = [
         "<p>Variantes geradas agora pela IA. O cartão da revisão não mudou e nada foi salvo. "
-        "Para estudar uma variante aprovada, clique no botão dela: abre a janela Adicionar do Anki já preenchida.</p>",
+        "Para estudar uma variante aprovada, clique no botão dela: abre a janela Adicionar do Anki já preenchida."
+        + (" Ou guarde as aprovadas no banco pessoal, para aparecerem nas suas revisões." if can_save else "")
+        + "</p>",
         "<h3>Cartão original</h3>",
         f"<p>{_p(result['text'])}</p>",
     ]

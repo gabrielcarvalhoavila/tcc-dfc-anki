@@ -74,6 +74,30 @@ def new_variant_note(col: Any, src: Any, q_field: int, value: str, tag: str) -> 
     return note
 
 
+def collect_records(col: Any, deck_id: int, to_record: Callable[..., dict[str, Any]], *, children: bool = True, skip_new: bool = True, skip_suspended: bool = True) -> list[dict[str, Any]]:
+    """Notas de um baralho (e dos subbaralhos) no formato de `core.note_to_record`; as de cartões que vencem primeiro vêm na frente."""
+    from anki.utils import ids2str
+
+    dids = list(col.decks.deck_and_child_ids(deck_id)) if children else [deck_id]
+    query = "(" + " or ".join(f"did:{d}" for d in dids) + ")" + (" -is:new" if skip_new else "") + (" -is:suspended" if skip_suspended else "")
+    card_ids = col.find_cards(query)
+    if not card_ids:
+        return []
+    rows = col.db.all(
+        "select nid, case when type = 0 then 2000000000 when queue = 1 then 0 when odid != 0 then odue else due end "
+        f"from cards where id in {ids2str(card_ids)}"
+    )
+    first_due: dict[int, int] = {}
+    for nid, due in rows:
+        first_due[nid] = min(due, first_due.get(nid, due))
+    deck_name = col.decks.name(deck_id)
+    records = []
+    for nid in sorted(first_due, key=lambda n: (first_due[n], n)):
+        note = col.get_note(nid)
+        records.append(to_record(nid, note.guid, note.note_type()["name"], note.items(), note.tags, [deck_name]))
+    return records
+
+
 def _model_name(card: Any) -> Any:
     note = _safe(lambda: card.note())
     nt = _safe(lambda: note.note_type()) if note is not None else None
