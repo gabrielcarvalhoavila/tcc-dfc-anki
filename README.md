@@ -22,18 +22,18 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | Pasta | Conteúdo |
 |---|---|
 | `docs/` | [projeto](docs/projeto.md), [fundamentação](docs/fundamentacao.md), [protocolo](docs/protocolo.md) (congelado), [piloto](docs/piloto-relampago.md), [arquitetura](docs/arquitetura.md), [desvios](docs/desvios.md) |
-| `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes; a variante sob demanda, que gera variantes de um cartão na hora com o LLM, fica desligada) |
+| `addon/dfc_probe/` | Add-on do Anki (registra revisões, sorteia e exibe variantes; fora do estudo, gera variantes de um cartão ou de um baralho com o LLM e as mostra nas revisões do próprio usuário, v0.5.0, ainda não instalada no Anki de estudo) |
 | `pipeline/dfc_pipeline/` | Exportar notas, gerar, validar, auditar e empacotar variantes |
 | `analysis/dfc_analysis/` | Análise do M5: monitor do CSV (só contagem e qualidade), teste cego, dados sintéticos e análise final com trava (precisa de numpy, pandas, scipy e statsmodels) |
-| `tests/` | 224 testes, sem rede; 17 usam o motor real do Anki e 52 (os da análise) precisam de numpy, pandas, scipy e statsmodels: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
-| `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção |
+| `tests/` | 374 testes, sem rede; 23 usam o motor real do Anki, 52 (os da análise) precisam de numpy, pandas, scipy e statsmodels e 43 (as telas do uso livre) do PyQt6: `run_tests.ps1 -Real`; os demais usam um Anki simulado |
+| `scripts/` | Instalar e empacotar o add-on, rodar os testes, conferir a exibição de um banco numa cópia da coleção, abrir um Anki de teste isolado (`anki_teste.ps1`) |
 | `pilot/relampago/` | Dados do piloto manual |
 | `data/` | Local, ignorado pelo Git: texto de cartões, variantes e logs |
 
 ## Começar
 
 1. **Testes:** `.\scripts\run_tests.ps1`
-2. **Add-on:** feche o Anki, rode `.\scripts\install_addon.ps1`, abra o Anki e confira em Ferramentas > DFC Probe > Status.
+2. **Add-on:** feche o Anki, rode `.\scripts\install_addon.ps1`, abra o Anki e confira em Ferramentas > DFC Probe > Status. Enquanto a coleta do estudo não terminar (22/11 ou o alvo de eventos válidos), o script recusa o Anki de estudo; para testar a versão do repositório sem afetá-lo, `.\scripts\anki_teste.ps1` abre um Anki isolado.
 3. **Pipeline:** copie `.env.example` para `.env` e preencha (a chave nunca vai para o Git nem para chats). Depois, na raiz:
 
 ```powershell
