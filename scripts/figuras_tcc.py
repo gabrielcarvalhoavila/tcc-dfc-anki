@@ -102,7 +102,7 @@ def did():
     ax.plot(xs, [4, 7], ":", color="#b03a2e", lw=1)
     ax.annotate("", xy=(1.06, 18), xytext=(1.06, 7), arrowprops=dict(arrowstyle="<->", color="#444444", lw=0.9))
     ax.text(1.1, 12.5, "DiD\n= 11 pp", fontsize=8, va="center")
-    ax.text(0.5, 8.6, "sem efeito extra\nnos suspeitos", fontsize=7, ha="center", va="bottom", color="#b03a2e")
+    ax.text(0.5, 4.4, "sem efeito extra\nnos suspeitos", fontsize=7, ha="center", va="top", color="#b03a2e")
     ax.set_xticks(xs)
     ax.set_xticklabels(["Original", "Variante"])
     ax.set_xlim(-0.2, 1.4)
