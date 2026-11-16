@@ -203,6 +203,15 @@ def telas():
     dlg.show_plan(plan)
     dlg.adjustSize()
     dlg.grab().save(os.path.join(OUT, "tela-lote.png"))
+    prog = ui.ProgressDialog(None, 180, lambda: None)
+    prog.update_counts(batch.Summary(total=180, done=74, with_variants=69, errors=2))
+    prog.adjustSize()
+    prog.grab().save(os.path.join(OUT, "tela-progresso.png"))
+    texto = "Notas com variantes: 120\nVariantes: 480 (paraphrase 120, reorder 118, cue_swap 104, pergunta 86, reformat 52)\nAvaliadas sem variantes (não conceituais ou sem variante aprovada): 9\nVariantes que você marcou como ruins (não voltam): 3\nArquivo: user_files/free_bank_<id>.json"
+    acoes = [("Exportar...", None), ("Importar...", None), ("Esquecer as notas avaliadas sem variantes", None), ("Apagar o banco pessoal", None)]
+    banco = ui.BankDialog(None, lambda: texto, [(nome, lambda: None) for nome, _ in acoes])
+    banco.adjustSize()
+    banco.grab().save(os.path.join(OUT, "tela-banco.png"))
 
 
 if __name__ == "__main__":
