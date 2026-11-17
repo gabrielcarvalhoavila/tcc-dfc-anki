@@ -11,8 +11,8 @@ Um add-on do Anki e um pipeline com LLM para medir se cartões que a pessoa "sem
 | M0 | Protocolo v1.7 congelado | 20/10 | Feito (v1 a v1.3 em 20/10; v1.4 a v1.6 em 21/10; v1.7 em 27/10, antes do primeiro sorteio do estudo) |
 | M2 | Add-on v0 (só registro) | 27/10 | Feito em 20/10: 12 revisões no Anki 26.05 real conferidas contra o histórico do Anki, 0 divergências em nota, horário, tempo, intervalo anterior e tipo; a resposta desfeita (Ctrl+Z) fica sem par e é marcada na exportação |
 | M1 | Banco de variantes e auditoria de 100 | 27/10 | Feito em 21/10: 2.727 notas elegíveis, 2.316 com variantes e 9.071 variantes, 90,7% aprovadas na validação automática (custo ≈ US$ 7,6); auditoria humana do autor: 94 de 100 válidas (94,0%), H1 atendida; banco oficial empacotado: 2.295 notas e 10.162 variantes, hash `e1284dee5eac` |
-| M3 | Add-on v1 (sorteio e exibição) | 27/10 | Feito: 0.4.0 instalada no Anki do autor, onde o irmão estuda (v1.7). A 0.3.0 (fichas Cloze com imagem, tecla `x`, Ctrl+Z, exportação do CSV) foi vista na interface em 21/10 com um banco falso; a 0.4.0, que só acrescenta a variante sob demanda (fora do estudo; habilitada no Anki compartilhado, protocolo 6.8), foi exercitada com o banco real em 22 e 27/10: 19 exposições sorteadas, todas com `shown_ok = 1` (`paraphrase`, `reorder`, `cue_swap` e `sem_imagem` vistos na tela; a `pergunta`, só com o banco falso e no `render_check`), tecla `x`, Ctrl+Z, exportação do CSV e 45 sorteios refeitos pela semente, 0 divergências |
-| M4 | Coleta | 28/10 a 22/11 | Começa em 28/10: o irmão estuda no PC do autor, num perfil de estudo com o baralho `00 - DFC` (protocolo 6.8) |
+| M3 | Add-on v1 (sorteio e exibição) | 27/10 | Feito: 0.4.0 instalada no Anki do autor, onde o participante estuda (v1.7). A 0.3.0 (fichas Cloze com imagem, tecla `x`, Ctrl+Z, exportação do CSV) foi vista na interface em 21/10 com um banco falso; a 0.4.0, que só acrescenta a variante sob demanda (fora do estudo; habilitada no Anki compartilhado, protocolo 6.8), foi exercitada com o banco real em 22 e 27/10: 19 exposições sorteadas, todas com `shown_ok = 1` (`paraphrase`, `reorder`, `cue_swap` e `sem_imagem` vistos na tela; a `pergunta`, só com o banco falso e no `render_check`), tecla `x`, Ctrl+Z, exportação do CSV e 45 sorteios refeitos pela semente, 0 divergências |
+| M4 | Coleta | 28/10 a 22/11 | Começa em 28/10: o participante estuda no PC do autor, num perfil de estudo com o baralho `00 - DFC` (protocolo 6.8) |
 | M5 | Análise | 23/11 a 27/11 | Script escrito e testado em 28/10 (`analysis/dfc_analysis/`: dados sintéticos com efeito conhecido, rótulos embaralhados e monitor sobre o CSV do primeiro dia; arquitetura, seção "Análise (M5)"); a análise final roda uma vez, depois do fim da coleta |
 | M6 | Entrega do trabalho | 4/12 | |
 | M7 | Apresentação | até 18/12 | |
@@ -51,7 +51,7 @@ Detalhes e esquemas em [arquitetura](docs/arquitetura.md).
 $env:PYTHONPATH = "analysis"
 $env:DFC_PERFIL_ESTUDO = "<nome do perfil de estudo>"
 .venv\Scripts\python -m dfc_analysis monitor --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --banco data\bank\variant_bank.json   # semanal: só contagem e qualidade
-.venv\Scripts\python -m dfc_analysis final --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --notas data\1_notas_exportadas_irmao_2026-10-21.jsonl   # uma vez, depois do fim da coleta
+.venv\Scripts\python -m dfc_analysis final --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv --notas data\1_notas_exportadas_AAAA-MM-DD.jsonl   # uma vez, depois do fim da coleta
 .venv\Scripts\python -m dfc_analysis limpar --csv data\eventos\dfc_eventos_AAAA-MM-DD.csv   # cópia só com o perfil de estudo na janela, para ver ou compartilhar
 ```
 
@@ -59,6 +59,6 @@ $env:DFC_PERFIL_ESTUDO = "<nome do perfil de estudo>"
 
 De 1332 notas lidas (AWS Skill Builder, HTTPS e Faculdade não nova), **697 passam na elegibilidade estrutural** (só texto, sem LaTeX, Cloze com uma lacuna, resposta não numérica) e **276 delas são suspeitas pelo histórico** (`reps ≥ 5` e `lapses = 0`, pelo primeiro cartão da nota): AWS 21 e Faculdade 255 (Grafos 54, Otimização combinatória 48, Cálculo II 46, Álgebra Linear 27, Algoritmos e Programação 18, Probabilidade 16, Fundamentos de Algoritmos 14, Introdução à arquitetura 11, Complexidade 11, Org B 6, outras 4). Redes e Sisop II têm cartões elegíveis, mas nenhum suspeito (no máximo 4 revisões). É contagem estrutural: o sinal "conceitual" do LLM ainda vai reduzi-la. O `reps` do Anki inclui passos de aprendizado: dos 276, 193 têm só 3 ou 4 revisões em estado de revisão e 83 (todas da Faculdade) têm 5 ou mais (protocolo v1.1).
 
-## Participante principal: o irmão (levantamento de 20/10, regras da v1.2)
+## Participante principal: estudante de vestibular (levantamento de 20/10, regras da v1.2)
 
 Comando `survey` no perfil dele aberto no Anki (só agregados, nada gravado): 28.900 notas (Cloze 84%, Image Occlusion 11%) e 2.755 respostas nos 28 dias anteriores, 58% delas em cartões que o add-on sortearia. Isso dá ≈ 1.320 eventos (≈ 730 de suspeitos pelo histórico) em 28 dias e ≈ 1.220 (≈ 680 de suspeitos) projetados para a janela de 26 dias (28/10 a 22/11), se a rotina continuar. Com as regras da v1.1 (só texto, uma lacuna) seriam ≈ 50 (≈ 16 de suspeitos). É projeção; vale o que o add-on registrar. Na v1.7 a projeção passa a vir da dose diária: ≈ 40 revisões sorteáveis por dia (a dose que ele propôs; o limite do Anki é 50), em sessões dedicadas no PC do autor, ≈ 1.040 eventos em 26 dias (protocolo 4.1 e 6.8).
